@@ -721,8 +721,10 @@ finally {
         }
     }
 
-    Context "PowerShell 7 specific tests" -Skip:(-not $IsCoreCLR) {
-        # Contains syntax only valid in PowerShell 7
-        . ([Path]::Combine($PSScriptRoot, 'New-PSNetDetourHook.Pwsh7.ps1'))
+    if ($IsCoreCLR) {
+        Context "PowerShell 7 specific tests" {
+            # Contains syntax only valid in PowerShell 7
+            . ([Path]::Combine($PSScriptRoot, 'New-PSNetDetourHook.Pwsh7.ps1'))
+        }
     }
 }
