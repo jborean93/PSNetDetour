@@ -2,11 +2,13 @@ using System;
 using System.Collections.ObjectModel;
 using System.Management.Automation;
 using System.Management.Automation.Host;
+using System.Reflection;
 
 namespace PSNetDetour;
 
 internal class ScriptBlockInvokeContext
 {
+    public MethodBase DetouredMethod { get; }
     public ScriptBlock ScriptBlock { get; }
     public InvocationInfo MyInvocation { get; }
 
@@ -14,9 +16,11 @@ internal class ScriptBlockInvokeContext
     public PSHost? Host { get; private set; }
 
     public ScriptBlockInvokeContext(
+        MethodBase detouredMethod,
         ScriptBlock scriptBlock,
         InvocationInfo myInvocation)
     {
+        DetouredMethod = detouredMethod;
         ScriptBlock = scriptBlock;
         MyInvocation = myInvocation;
     }
@@ -81,7 +85,18 @@ internal class ScriptBlockInvokeContext
         {
             settings.Host = Host;
         }
-        Collection<PSObject> output = ps.Invoke(null, settings);
+
+        Collection<PSObject> output;
+        try
+        {
+            output = ps.Invoke(null, settings);
+        }
+        catch (Exception e)
+        {
+            throw new MethodInvocationException(
+                $"Exception occurred while invoking hook for {DetouredMethod.Name}: {e.Message}",
+                e);
+        }
 
         object? outputValue = null;
         if (output.Count > 0)

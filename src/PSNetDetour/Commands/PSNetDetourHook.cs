@@ -12,23 +12,23 @@ namespace PSNetDetour.Commands;
 [Cmdlet(
     VerbsCommon.New,
     "PSNetDetourHook",
-    DefaultParameterSetName = "TargetScriptBlock")]
+    DefaultParameterSetName = "Source")]
 [OutputType(typeof(NetDetourHook))]
 public sealed class NewPSNetDetourHook : PSCmdlet
 {
     [Parameter(
         Mandatory = true,
         Position = 0,
-        ParameterSetName = "TargetScriptBlock"
+        ParameterSetName = "Source"
     )]
-    public ScriptBlock? Target { get; set; }
+    public ScriptBlock? Source { get; set; }
 
     [Parameter(
         Mandatory = true,
         Position = 0,
-        ParameterSetName = "TargetMethodInfo"
+        ParameterSetName = "Method"
     )]
-    public MethodBase? MethodInfo { get; set; }
+    public MethodBase? Method { get; set; }
 
     [Parameter(
         Mandatory = true,
@@ -49,21 +49,21 @@ public sealed class NewPSNetDetourHook : PSCmdlet
     {
         Debug.Assert(Hook is not null);
 
-        MethodBase targetMethod;
-        if (ParameterSetName == "TargetMethodInfo")
+        MethodBase sourceMethod;
+        if (ParameterSetName == "Method")
         {
-            Debug.Assert(MethodInfo is not null);
-            targetMethod = MethodInfo!;
+            Debug.Assert(Method is not null);
+            sourceMethod = Method!;
         }
         else
         {
-            Debug.Assert(Target is not null);
-            if (Target?.Ast is ScriptBlockAst targetAst)
+            Debug.Assert(Source is not null);
+            if (Source?.Ast is ScriptBlockAst sourceAst)
             {
                 try
                 {
-                    targetMethod = ScriptBlockParser.ParseScriptBlockMethod(
-                        targetAst,
+                    sourceMethod = ScriptBlockParser.ParseScriptBlockMethod(
+                        sourceAst,
                         FindNonPublic.IsPresent,
                         IgnoreConstructorNew.IsPresent);
                 }
@@ -83,7 +83,7 @@ public sealed class NewPSNetDetourHook : PSCmdlet
                             { "EndColumn", error.Extent.EndColumnNumber },
                         })
                     {
-                        ErrorDetails = new($"Failed to parse Target method: {error.Message}")
+                        ErrorDetails = new($"Failed to parse Source method: {error.Message}")
                     };
 
                     ThrowTerminatingError(rec);
@@ -94,19 +94,30 @@ public sealed class NewPSNetDetourHook : PSCmdlet
             {
                 ThrowTerminatingError(
                     new ErrorRecord(
-                        new ArgumentException("Target ScriptBlock Ast is not in the expected format."),
-                        "TargetInvalidAst",
+                        new ArgumentException("Source ScriptBlock Ast is not in the expected format."),
+                        "SourceInvalidAst",
                         ErrorCategory.InvalidArgument,
-                        Target));
+                        Source));
                 return;
             }
         }
 
-        MethodInfo hookMethod = DetourBuilder.CreateDetourMethod(
-            targetMethod);
+        if (sourceMethod.IsGenericMethod || sourceMethod.DeclaringType is { IsGenericType: true })
+        {
+            ThrowTerminatingError(
+                new ErrorRecord(
+                    new NotSupportedException("Detouring generic methods or methods on generic types is not supported."),
+                    "GenericMethodsNotSupported",
+                    ErrorCategory.NotImplemented,
+                    sourceMethod));
+            return;
+        }
 
-        ScriptBlockInvokeContext invokeContext = new(Hook, MyInvocation);
-        Hook detourHook = new(targetMethod, hookMethod, invokeContext);
+        MethodInfo hookMethod = DetourBuilder.CreateDetourMethod(
+            sourceMethod);
+
+        ScriptBlockInvokeContext invokeContext = new(sourceMethod, Hook, MyInvocation);
+        Hook detourHook = new(sourceMethod, hookMethod, invokeContext);
 
         WriteObject(new NetDetourHook(detourHook, invokeContext));
     }

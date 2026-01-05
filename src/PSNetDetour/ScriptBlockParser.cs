@@ -121,6 +121,14 @@ internal static class ScriptBlockParser
         }
 
         Type methodType = ResolveType(typeExpressionAst.TypeName);
+        if (methodType.IsGenericType)
+        {
+            throw CreateParseError(
+                typeExpressionAst.TypeName.Extent,
+                "ScriptBlockInvokeMemberOnGenericType",
+                "ScriptBlock method call type must not be a generic type, hooks do not work on generics.");
+        }
+
         string methodName = memberNameAst.Value;
         Type[] parameterTypes = [];
         if (invokeAst.Arguments is not null)
@@ -138,7 +146,6 @@ internal static class ScriptBlockParser
                 return ResolveType(typeArgAst.TypeName);
             })];
         }
-        Type[] genericTypeArguments = [];
 
 #if NET8_0_OR_GREATER
         if (invokeAst.NullConditional)
@@ -149,9 +156,12 @@ internal static class ScriptBlockParser
                 "ScriptBlock method call must not be null-conditional.");
         }
 
-        if (invokeAst.GenericTypeArguments is not null)
+        if (invokeAst.GenericTypeArguments is not null && invokeAst.GenericTypeArguments.Count > 0)
         {
-            genericTypeArguments = invokeAst.GenericTypeArguments.Select(ResolveType).ToArray();
+            throw CreateParseError(
+                invokeAst.GenericTypeArguments[0].Extent,
+                "ScriptBlockInvokeMemberHasGenericTypeArguments",
+                "ScriptBlock method call must not have generic type arguments.");
         }
 #endif
 
@@ -189,7 +199,6 @@ internal static class ScriptBlockParser
                 methodType,
                 methodName,
                 parameterTypes,
-                genericTypeArguments,
                 invokeAst.Static,
                 searchConstructor);
 
@@ -206,7 +215,6 @@ internal static class ScriptBlockParser
         Type methodType,
         string methodName,
         Type[] parameterTypes,
-        Type[] genericTypes,
         bool isStatic,
         bool isConstructor)
     {
@@ -226,20 +234,6 @@ internal static class ScriptBlockParser
             }
 
             overload.AppendFormat("ReturnType {0}", methodName);
-        }
-
-        if (genericTypes.Length > 0)
-        {
-            overload.Append('<');
-            for (int i = 0; i < genericTypes.Length; i++)
-            {
-                overload.Append(genericTypes[i].Name);
-                if (i < genericTypes.Length - 1)
-                {
-                    overload.Append(", ");
-                }
-            }
-            overload.Append('>');
         }
 
         overload.Append('(');
@@ -267,15 +261,6 @@ internal static class ScriptBlockParser
                     "UnknownType",
                     $"Failed to resolve type {typeName.FullName}.");
 
-            if (resolvedType.IsGenericTypeDefinition)
-            {
-                // A hook cannot be set on the generic type itself, it must be
-                // set on the constructed type with type arguments.
-                throw CreateParseError(
-                    typeName.Extent,
-                    "GenericTypeWithoutTypeArguments",
-                    $"Type {resolvedType.Name} is a generic type but hooks can only be set with generic type arguments.");
-            }
             return resolvedType;
         }
 

@@ -5,7 +5,7 @@ using namespace System.IO
 Describe "Use-PSNetDetourContext" {
     It "Stops hook outside ScriptBlock" {
         Use-PSNetDetourContext {
-            New-PSNetDetourHook -Target { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+            New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
                 param ($arg1)
 
                 $arg1 | Should -Be 5
