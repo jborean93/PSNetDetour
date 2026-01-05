@@ -18,7 +18,7 @@ env:
 jobs:
   build:
     name: build
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     permissions:
       id-token: write  # Azure OIDC auth
       contents: read  # Repo checkout
@@ -53,15 +53,27 @@ jobs:
     name: test
     needs:
     - build
-    runs-on: windows-latest
+    runs-on: ${{ matrix.info.os }}
     strategy:
       fail-fast: false
       matrix:
         info:
-        - name: PS_7.4_x64
+        - name: PS_5.1_x64_Windows
+          psversion: '5.1'
+          os: windows-latest
+        - name: PS_7.4_x64_Windows
           psversion: '7.4.0'
-        - name: PS_7.5_x64
+          os: windows-latest
+        - name: PS_7.4_x64_Linux
+          psversion: '7.4.0'
+          os: ubuntu-latest
+        - name: PS_7.5_x64_Windows
           psversion: '7.5.0'
+          os: windows-latest
+        - name: PS_7.5_x64_Linux
+          psversion: '7.5.0'
+          os: ubuntu-latest
+
 
     steps:
     - uses: actions/checkout@v6
