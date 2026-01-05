@@ -35,7 +35,7 @@
     Description       = 'Hook .NET APIs in PowerShell.`nSee https://github.com/jborean93/PSNetDetour for more info'
 
     # Minimum version of the PowerShell engine required by this module
-    PowerShellVersion = '7.4'
+    PowerShellVersion = '5.1'
 
     # Minimum version of Microsoft .NET Framework required by this module. This prerequisite is valid for the PowerShell Desktop edition only.
     # DotNetFrameworkVersion = '6.0'

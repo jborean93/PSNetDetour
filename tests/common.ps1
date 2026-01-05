@@ -14,6 +14,8 @@ if (-not (Get-Variable IsWindows -ErrorAction SilentlyContinue)) {
 
 Add-Type -TypeDefinition @'
 using System;
+using System.Collections;
+using System.Collections.Generic;
 
 namespace PSNetDetour.Tests
 {
@@ -51,6 +53,11 @@ namespace PSNetDetour.Tests
         public static int StaticIntArgs(int a)
         {
             return 1 + a;
+        }
+
+        public static Hashtable StaticRefReturn()
+        {
+            return new Hashtable() { { "key", "value" } };
         }
 
         public static int New(int arg1)
@@ -96,6 +103,54 @@ namespace PSNetDetour.Tests
         public static int casecheck()
         {
             return 2;
+        }
+
+        public static T StaticGenericMethod<T>(T input)
+        {
+            return input;
+        }
+
+        public static int StaticWithFixedGenericArg(List<int> input)
+        {
+            return input[0];
+        }
+    }
+
+    public class BaseClass
+    {
+        public BaseClass(int prop1) : this(prop1, 10)
+        { }
+
+        public BaseClass(int prop1, int prop2)
+        {
+            Prop1 = prop1;
+            Prop2 = prop2;
+        }
+
+        public int Prop1 { get; }
+        public int Prop2 { get; }
+    }
+
+    public class SubClass : BaseClass
+    {
+        public SubClass(int prop1) : base(prop1 + 10)
+        {
+            Prop3 = 50;
+        }
+
+        public SubClass(int prop1, int prop2) : base(prop1, prop2)
+        {
+            Prop3 = 100;
+        }
+
+        public int Prop3 { get; }
+    }
+
+    public class GenericClass<T>
+    {
+        public T Echo(T input)
+        {
+            return input;
         }
     }
 }
