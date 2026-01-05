@@ -127,8 +127,8 @@ namespace PSNetDetour.Tests
             Prop2 = prop2;
         }
 
-        public int Prop1 { get; }
-        public int Prop2 { get; }
+        public int Prop1 { get; set; }
+        public int Prop2 { get; set; }
     }
 
     public class SubClass : BaseClass
@@ -143,7 +143,7 @@ namespace PSNetDetour.Tests
             Prop3 = 100;
         }
 
-        public int Prop3 { get; }
+        public int Prop3 { get; set; }
     }
 
     public class GenericClass<T>
