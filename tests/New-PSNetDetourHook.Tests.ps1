@@ -89,8 +89,6 @@ Describe "New-PSNetDetourHook" {
 
         It "Hooks instance void with no args" {
             $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstanceVoidNoArgs() } -Hook {
-                param ()
-
                 $Detour.Instance | Should -Not -BeNullOrEmpty
                 $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestClass])
                 $Detour.Instance.SomeProperty | Should -Be 1
@@ -136,8 +134,6 @@ Describe "New-PSNetDetourHook" {
 
         It "Hooks instance int with no args" {
             $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstanceIntNoArgs() } -Hook {
-                param ()
-
                 $Detour.Instance | Should -Not -BeNullOrEmpty
                 $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestClass])
                 $Detour.Invoke() + 2
@@ -176,7 +172,7 @@ Describe "New-PSNetDetourHook" {
         # FIXME: Figure out why WinPS fails
         It "Hooks constructor with no args" -Skip:(-not $IsCoreCLR) {
             $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::new() } -Hook {
-                param ()
+                $ErrorActionPreference = 'Stop'
 
                 $Detour.Instance | Should -Not -BeNullOrEmpty
                 $Detour.Instance.SomeProperty | Should -Be 0
@@ -219,8 +215,6 @@ Describe "New-PSNetDetourHook" {
 
         It "Finds private/internal method" {
             $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::InternalMethod() } -Hook {
-                param ()
-
                 $Detour.Instance | Should -BeNullOrEmpty
                 $Detour.Invoke() + 1
             } -FindNonPublic
@@ -283,6 +277,8 @@ Describe "New-PSNetDetourHook" {
         # FIXME: Figure out why WinPS fails
         It "Hooks property getter" -Skip:(-not $IsCoreCLR) {
             $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass].get_SomeProperty() } -Hook {
+                $ErrorActionPreference = 'Stop'
+
                 $Detour.Instance | Should -Not -BeNullOrEmpty
                 $Detour.Invoke() + 10
             }
@@ -301,6 +297,8 @@ Describe "New-PSNetDetourHook" {
 
             $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass].set_SomeProperty([int]) } -Hook {
                 param ($arg1)
+
+                $ErrorActionPreference = 'Stop'
 
                 $arg1 | Should -Be 5
                 $arg1 | Should -BeOfType 'Int32'

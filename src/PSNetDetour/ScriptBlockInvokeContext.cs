@@ -9,6 +9,7 @@ namespace PSNetDetour;
 internal class ScriptBlockInvokeContext
 {
     public MethodBase DetouredMethod { get; }
+    public Type DetourMetaType { get; }
     public ScriptBlock ScriptBlock { get; }
     public InvocationInfo MyInvocation { get; }
 
@@ -17,10 +18,12 @@ internal class ScriptBlockInvokeContext
 
     public ScriptBlockInvokeContext(
         MethodBase detouredMethod,
+        Type detourMetaType,
         ScriptBlock scriptBlock,
         InvocationInfo myInvocation)
     {
         DetouredMethod = detouredMethod;
+        DetourMetaType = detourMetaType;
         ScriptBlock = scriptBlock;
         MyInvocation = myInvocation;
     }
@@ -68,12 +71,9 @@ internal class ScriptBlockInvokeContext
             ps.Streams.Information = ContextStreams.Information;
         }
 
-        PSObject detourObj = new PSObject();
-        detourObj.Properties.Add(new PSNoteProperty("Instance", self));
-        detourObj.Properties.Add(new PSNoteProperty("Original", orig));
-        detourObj.Methods.Add(new PSScriptMethod(
-            "Invoke",
-            ScriptBlock.Create("$this.Original.Invoke.Invoke(@(if ($this.Instance) { $this.Instance }; $args))")));
+        object? detourObj = self is null
+            ? Activator.CreateInstance(DetourMetaType, [orig])
+            : Activator.CreateInstance(DetourMetaType, [orig, self]);
 
         ps.AddScript("$Detour = $args[0]; $methArgs = $args[2]; & $args[1].Ast.GetScriptBlock() @methArgs", true)
             .AddArgument(detourObj)
