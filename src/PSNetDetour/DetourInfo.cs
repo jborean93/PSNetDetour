@@ -7,13 +7,24 @@ using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using PSNetDetour;
 
-[assembly: InternalsVisibleTo(DetourBuilder.AssemblyName)]
+[assembly: InternalsVisibleTo(DetourInfo.AssemblyName)]
 
 namespace PSNetDetour;
 
-internal static class DetourBuilder
+internal sealed class DetourInfo
 {
     internal const string AssemblyName = "PSNetDetour.Dynamic";
+
+    public MethodInfo DetourTarget { get; }
+    public Type DetourMetaType { get; }
+
+    public DetourInfo(
+        MethodInfo detourTarget,
+        Type detourMetaType)
+    {
+        DetourTarget = detourTarget;
+        DetourMetaType = detourMetaType;
+    }
 
     private static ModuleBuilder? _builder;
 
@@ -91,7 +102,27 @@ internal static class DetourBuilder
         }
     }
 
-    public static MethodInfo CreateDetourMethod(
+    private static ConstructorInfo? _objectCtor;
+
+    private static ConstructorInfo ObjectCtor
+    {
+        get
+        {
+            if (_objectCtor is null)
+            {
+                _objectCtor = typeof(object).GetConstructor(
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    [],
+                    null)
+                    ?? throw new RuntimeException("Failed to get object constructor method info.");
+            }
+
+            return _objectCtor;
+        }
+    }
+
+    public static DetourInfo CreateDetour(
         MethodBase methodToDetour)
     {
         bool isStatic = false;
@@ -103,7 +134,8 @@ internal static class DetourBuilder
         }
         Type? instanceType = isStatic ? null : methodToDetour.DeclaringType;  // FIXME: Handle nullable DeclaringType
 
-        Type[] parameterTypes = [.. methodToDetour.GetParameters().Select(p => p.ParameterType)];
+        ParameterInfo[] methodParams = methodToDetour.GetParameters();
+        Type[] parameterTypes = [.. methodParams.Select(p => p.ParameterType)];
         string typeName = $"{AssemblyName}.{methodToDetour.Name}-{Guid.NewGuid()}";
 
         TypeBuilder typeBuilder = Builder.DefineType(
@@ -111,33 +143,36 @@ internal static class DetourBuilder
             TypeAttributes.Class | TypeAttributes.Public,
             typeof(object));
 
-        List<Type> parameterTypeList = [.. parameterTypes];
-        int numParameters = parameterTypeList.Count;
+        // If the method is not static we prepend the instance type
+        // before the arguments.
+        Type[] methodParameterTypes = isStatic || instanceType is null
+            ? parameterTypes
+            : [ instanceType, .. parameterTypes ];
 
-        if (!isStatic && instanceType is not null)
-        {
-            // If the method is not static we prepend the instance type
-            // before the arguments.
-            parameterTypeList.Insert(0, instanceType);
-        }
-
-        Type originalDelegate = CreateDelegateType(
+        (Type originalDelegate, MethodInfo delegateMethod) = CreateDelegateType(
             $"{typeName}Delegate",
             returnType,
-            parameterTypeList.ToArray());
+            methodParameterTypes);
+
+        Type detourMetaType = CreateDetourMetaType(
+            $"{typeName}DetourMeta",
+            returnType,
+            methodParams,
+            originalDelegate,
+            delegateMethod,
+            instanceType);
 
         // Need to build the original method delegate and insert it as the first
         // argument in our detour method.
         MethodInfo targetDelegate = returnType == typeof(void)
             ? InvokeScriptBlockVoidMethod
             : InvokeScriptBlockMethod.MakeGenericMethod(returnType);
-        parameterTypeList.Insert(0, originalDelegate);
 
         MethodBuilder hookedMethod = typeBuilder.DefineMethod(
             "Hook",
             MethodAttributes.Public,
             returnType,
-            [.. parameterTypeList]);
+            [originalDelegate, .. methodParameterTypes]);
 
         /*
         Creates the following function dependent on whether the method to
@@ -208,36 +243,132 @@ internal static class DetourBuilder
         ilGen.Emit(OpCodes.Call, targetDelegate); // Call InvokeScriptBlock
         ilGen.Emit(OpCodes.Ret);
 
-        Type createdType = typeBuilder.CreateType()!;
-        return createdType.GetMethod("Hook")!;
+        Type createdType = typeBuilder.CreateType()
+            ?? throw new RuntimeException("Failed to create detour type.");
+
+        MethodInfo detourMethod = createdType.GetMethod("Hook")
+            ?? throw new RuntimeException("Failed to get detour Hook method.");
+
+        return new(detourMethod, detourMetaType);
     }
 
-    private static Type CreateDelegateType(
+    private static (Type, MethodInfo) CreateDelegateType(
         string typeName,
         Type returnType,
         Type[] parameterTypes)
     {
-        TypeBuilder delegateBuilder = Builder.DefineType(
+        TypeBuilder builder = Builder.DefineType(
             typeName,
             TypeAttributes.Sealed | TypeAttributes.Public,
             typeof(MulticastDelegate));
 
-        ConstructorBuilder constructorBuilder = delegateBuilder.DefineConstructor(
+        ConstructorBuilder constructorBuilder = builder.DefineConstructor(
             MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.RTSpecialName,
             CallingConventions.Standard,
             [ typeof(object), typeof(IntPtr) ]);
         constructorBuilder.SetImplementationFlags(
             MethodImplAttributes.CodeTypeMask);
 
-        MethodBuilder delegateMethod = delegateBuilder.DefineMethod(
-            "Invoke",
+        const string methodName = "Invoke";
+        MethodBuilder delegateMethod = builder.DefineMethod(
+            methodName,
             MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.Virtual,
             returnType,
             parameterTypes);
         delegateMethod.SetImplementationFlags(
             MethodImplAttributes.CodeTypeMask);
 
-        return delegateBuilder.CreateType()
+        Type delegateType = builder.CreateType()
             ?? throw new RuntimeException("Failed to create delegate type.");
+        MethodInfo method = delegateType.GetMethod(methodName)
+            ?? throw new RuntimeException("Failed to get delegate Invoke method.");
+
+        return (delegateType, method);
+    }
+
+    private static Type CreateDetourMetaType(
+        string typeName,
+        Type returnType,
+        ParameterInfo[] parameters,
+        Type delegateType,
+        MethodInfo delegateMethod,
+        Type? instanceType)
+    {
+        TypeBuilder builder = Builder.DefineType(
+            typeName,
+            TypeAttributes.Class | TypeAttributes.Public | TypeAttributes.Sealed,
+            typeof(object));
+
+        FieldBuilder delegateField = builder.DefineField(
+            "_delegate",
+            delegateType,
+            FieldAttributes.Private);
+
+        List<Type> constructorParameterTypes = [ delegateType ];
+        FieldBuilder? instanceField = null;
+        if (instanceType is not null)
+        {
+            constructorParameterTypes.Add(instanceType);
+            instanceField = builder.DefineField(
+                "Instance",
+                instanceType,
+                FieldAttributes.Public);
+        }
+
+        ConstructorBuilder constructorBuilder = builder.DefineConstructor(
+            MethodAttributes.Public,
+            CallingConventions.Standard,
+            [.. constructorParameterTypes]);
+
+        ILGenerator ctorIl = constructorBuilder.GetILGenerator();
+        ctorIl.Emit(OpCodes.Ldarg_0); // Load this
+        ctorIl.Emit(OpCodes.Call, ObjectCtor); // Call base constructor
+        ctorIl.Emit(OpCodes.Ldarg_0); // Load this
+        ctorIl.Emit(OpCodes.Ldarg_1); // Load delegate argument
+        ctorIl.Emit(OpCodes.Stfld, delegateField); // Store delegate in field
+
+        if (instanceField is not null)
+        {
+            ctorIl.Emit(OpCodes.Ldarg_0); // Load this
+            ctorIl.Emit(OpCodes.Ldarg_2); // Load instance argument
+            ctorIl.Emit(OpCodes.Stfld, instanceField); // Store instance in field
+        }
+
+        ctorIl.Emit(OpCodes.Ret);
+
+        Type[] parameterTypes = [.. parameters.Select(p => p.ParameterType)];
+        MethodBuilder invokeMethod = builder.DefineMethod(
+            "Invoke",
+            MethodAttributes.Public,
+            returnType,
+            parameterTypes);
+
+        foreach (ParameterInfo param in parameters)
+        {
+            invokeMethod.DefineParameter(
+                param.Position + 1,
+                param.Attributes,
+                param.Name);
+        }
+
+        ILGenerator invokeIl = invokeMethod.GetILGenerator();
+        invokeIl.Emit(OpCodes.Ldarg_0); // Load this
+        invokeIl.Emit(OpCodes.Ldfld, delegateField); // Load delegate field
+
+        if (instanceField is not null)
+        {
+            invokeIl.Emit(OpCodes.Ldarg_0); // Load this
+            invokeIl.Emit(OpCodes.Ldfld, instanceField); // Load instance field
+        }
+
+        for (int i = 0; i < parameterTypes.Length; i++)
+        {
+            invokeIl.Emit(OpCodes.Ldarg, i + 1); // Load each argument
+        }
+        invokeIl.Emit(OpCodes.Callvirt, delegateMethod); // Call delegate Invoke
+        invokeIl.Emit(OpCodes.Ret);
+
+        return builder.CreateType()
+            ?? throw new RuntimeException("Failed to create detour type.");
     }
 }

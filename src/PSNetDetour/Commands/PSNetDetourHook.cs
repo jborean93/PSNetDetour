@@ -113,11 +113,11 @@ public sealed class NewPSNetDetourHook : PSCmdlet
             return;
         }
 
-        MethodInfo hookMethod = DetourBuilder.CreateDetourMethod(
+        DetourInfo detourInfo = DetourInfo.CreateDetour(
             sourceMethod);
 
-        ScriptBlockInvokeContext invokeContext = new(sourceMethod, Hook, MyInvocation);
-        Hook detourHook = new(sourceMethod, hookMethod, invokeContext);
+        ScriptBlockInvokeContext invokeContext = new(sourceMethod, detourInfo.DetourMetaType, Hook, MyInvocation);
+        Hook detourHook = new(sourceMethod, detourInfo.DetourTarget, invokeContext);
 
         WriteObject(new NetDetourHook(detourHook, invokeContext));
     }
