@@ -942,10 +942,115 @@ finally {
             }
         }
 
-        # TODO: Add tests for host output
+        It "Handles exception for out parameter" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableOutArg([ref][int]) } -Hook {
+                param ($arg1)
+
+                throw "Test exception in hook"
+            }
+            try {
+                $val = 1
+                {
+                    [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableOutArg([ref]$val)
+                } | Should -Throw '*Exception occurred while invoking hook for StaticVoidWithBlittableOutArg: Test exception in hook*'
+                $val | Should -Be 1
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Handles recursive calls" {
+            $script:callCount = 0
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::RecursiveCall([int]) } -Hook {
+                param ($arg1)
+
+                $script:callCount++
+
+                if ($arg1 -eq 4) {
+                    $arg1 = -1
+                }
+
+                $Detour.Invoke($arg1)
+            }
+            try {
+                [PSNetDetour.Tests.TestClass]::RecursiveCall(1) | Should -Be -1
+                $script:callCount | Should -Be 4
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Sends other streams to PSHost of pipeline invoking hooked method" {
+            $ps = [PowerShell]::Create([System.Management.Automation.RunspaceMode]::CurrentRunspace)
+
+            $host1 = [PSNetDetour.Tests.CapturingHost]::new()
+            $host2 = [PSNetDetour.Tests.CapturingHost]::new()
+
+            $null = $ps.AddScript({
+                New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidNoArgs() } -Hook {
+                    Write-Error "error"
+                    Write-Verbose "verbose"
+                    Write-Debug "debug"
+                    Write-Warning "warning"
+                    Write-Progress -Activity "Test Activity" -Status "Test Status" -Completed
+                    Write-Information "information"
+                    Write-Host "host"
+                }
+            })
+
+            $h = $ps.Invoke($null, [System.Management.Automation.PSInvocationSettings]@{ Host = $host1 })
+            try {
+                $ps.Commands.Clear()
+                $ps.Streams.ClearStreams()
+
+                $null = $ps.AddScript({
+                    $ErrorActionPreference = 'Continue'
+                    $VerbosePreference = 'Continue'
+                    $DebugPreference = 'Continue'
+                    $WarningPreference = 'Continue'
+                    $ProgressPreference = 'Continue'
+                    $InformationPreference = 'Continue'
+
+                    [PSNetDetour.Tests.TestClass]::StaticVoidNoArgs()
+                })
+
+                $ps.Invoke($null, [System.Management.Automation.PSInvocationSettings]@{ Host = $host2 })
+            }
+            finally {
+                $h.Dispose()
+            }
+
+            # As the hook runs in a .NET method it doesn't emit the records to
+            # the PowerShell streams.
+            $ps.Streams.Error.Count | Should -Be 0
+            $ps.Streams.Verbose.Count | Should -Be 0
+            $ps.Streams.Debug.Count | Should -Be 0
+            $ps.Streams.Warning.Count | Should -Be 0
+            $ps.Streams.Progress.Count | Should -Be 0
+            $ps.Streams.Information.Count | Should -Be 0
+
+            # Instead they are written to the PSHost that was used when
+            # invoking the method (not when the hook was created).
+            # Exception to this is the ErrorRecord which is only written by
+            # the statement and it will never reach that in this case.
+            $host1.UI.CallHistory.Length | Should -Be 0
+            $host2.UI.CallHistory.Length | Should -Be 8
+            $host2.UI.CallHistory[0] | Should -Be 'WriteVerboseLine: MSG:verbose'
+            $host2.UI.CallHistory[1] | Should -Be 'WriteDebugLine: MSG:debug'
+            $host2.UI.CallHistory[2] | Should -Be 'WriteWarningLine: MSG:warning'
+            $host2.UI.CallHistory[3] | Should -Be 'WriteProgress: ID:0 REC:parent = -1 id = 0 act = Test Activity stat = Test Status cur =  pct = -1 sec = -1 type = Completed'
+            $host2.UI.CallHistory[4] | Should -Be 'WriteInformation: REC:information'
+            $host2.UI.CallHistory[5] | Should -Be 'WriteLine: VAL:information'
+            $host2.UI.CallHistory[6] | Should -Be 'WriteInformation: REC:host'
+            $host2.UI.CallHistory[7] | Should -Be 'WriteLine: VAL:host'
+
+            $ps.Dispose()
+        }
+
         # TODO: Add tests for async
         # TODO: Add tests for method invoked in another thread
-        # TODO: Add tests for recursive hooks
     }
 
     Context "Invalid ScriptBlock Targets" {

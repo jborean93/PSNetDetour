@@ -16,6 +16,12 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Management.Automation;
+using System.Management.Automation.Host;
+using System.Management.Automation.Runspaces;
+using System.Security;
 
 namespace PSNetDetour.Tests
 {
@@ -185,6 +191,21 @@ namespace PSNetDetour.Tests
             outInt = 10;
             return false;
         }
+
+        public static int RecursiveCall(int count)
+        {
+            while (count != -1)
+            {
+                if (count > 10)
+                {
+                    throw new Exception("Failure, expected exit already");
+                }
+
+                count = RecursiveCall(count + 1);
+            }
+
+            return count;
+        }
     }
 
     public class BaseClass
@@ -229,6 +250,154 @@ namespace PSNetDetour.Tests
     {
         public int IntValue;
         public string StringValue;
+    }
+
+    public class CapturingHost : PSHost
+    {
+        private readonly CapturingHostUI HostUI;
+
+        public CapturingHost()
+        {
+            HostUI = new CapturingHostUI();
+        }
+
+        public override CultureInfo CurrentCulture
+        {
+            get { return CultureInfo.InvariantCulture; }
+        }
+
+        public override CultureInfo CurrentUICulture
+        {
+            get { return CultureInfo.InvariantCulture; }
+        }
+
+        public override Guid InstanceId
+        {
+            get { return Guid.NewGuid(); }
+        }
+
+        public override string Name
+        {
+            get { return "CapturingHost"; }
+        }
+
+        public override PSHostUserInterface UI
+        {
+            get { return HostUI; }
+        }
+
+        public override Version Version
+        {
+            get { return new Version("1.2.3"); }
+        }
+
+        public override void EnterNestedPrompt()
+        {}
+
+        public override void ExitNestedPrompt()
+        {}
+
+        public override void NotifyBeginApplication()
+        {}
+
+        public override void NotifyEndApplication()
+        {}
+
+        public override void SetShouldExit(int exitCode)
+        {}
+    }
+
+    public class CapturingHostUI : PSHostUserInterface
+    {
+        private readonly List<string> _callHistory = new List<string>();
+
+        public CapturingHostUI()
+        {}
+
+        public string[] CallHistory
+        {
+            get { return _callHistory.ToArray(); }
+        }
+
+        public override PSHostRawUserInterface RawUI
+        {
+            get { return null; }
+        }
+
+        public override Dictionary<string, PSObject> Prompt(string caption, string message, Collection<FieldDescription> descriptions)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override int PromptForChoice(string caption, string message, Collection<ChoiceDescription> choices, int defaultChoice)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override PSCredential PromptForCredential(string caption, string message, string userName, string targetName, PSCredentialTypes allowedCredentialTypes, PSCredentialUIOptions options)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override PSCredential PromptForCredential(string caption, string message, string userName, string targetName)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override string ReadLine()
+        {
+            throw new NotImplementedException();
+        }
+
+        public override SecureString ReadLineAsSecureString()
+        {
+            throw new NotImplementedException();
+        }
+
+        public override void Write(ConsoleColor foregroundColor, ConsoleColor backgroundColor, string value)
+        {
+            _callHistory.Add(string.Format("Write: FG:{0} BG:{1} VAL:{2}", foregroundColor, backgroundColor, value));
+        }
+
+        public override void Write(string value)
+        {
+            _callHistory.Add(string.Format("Write: VAL:{0}", value));
+        }
+
+        public override void WriteDebugLine(string message)
+        {
+            _callHistory.Add(string.Format("WriteDebugLine: MSG:{0}", message));
+        }
+
+        public override void WriteErrorLine(string value)
+        {
+            _callHistory.Add(string.Format("WriteErrorLine: VAL:{0}", value));
+        }
+
+        public override void WriteLine(string value)
+        {
+            _callHistory.Add(string.Format("WriteLine: VAL:{0}", value));
+        }
+
+        public override void WriteProgress(long sourceId, ProgressRecord record)
+        {
+            _callHistory.Add(string.Format("WriteProgress: ID:{0} REC:{1}", sourceId, record.ToString()));
+        }
+
+        public override void WriteVerboseLine(string message)
+        {
+            _callHistory.Add(string.Format("WriteVerboseLine: MSG:{0}", message));
+        }
+
+        public override void WriteWarningLine(string message)
+        {
+            _callHistory.Add(string.Format("WriteWarningLine: MSG:{0}", message));
+        }
+
+        public override void WriteInformation(InformationRecord record)
+        {
+            _callHistory.Add(string.Format("WriteInformation: REC:{0}", record.ToString()));
+        }
     }
 }
 '@
