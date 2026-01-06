@@ -114,6 +114,77 @@ namespace PSNetDetour.Tests
         {
             return input[0];
         }
+
+        public static void StaticVoidWithBlittableRefArg(ref int input)
+        {
+            input += 1;
+        }
+
+        public static void StaticVoidWithBlittableOutArg(out int output)
+        {
+            output = 20;
+        }
+
+        public static void StaticVoidWithNonBlittableRefArg(ref NonBlittableStruct input)
+        {
+            input.IntValue += 10;
+            input.StringValue += " Modified";
+        }
+
+        public static void StaticVoidWithNonBlittableOutArg(out NonBlittableStruct output)
+        {
+            output = new NonBlittableStruct { IntValue = 30, StringValue = "Hello" };
+        }
+
+        public static void StaticVoidWithRefRefArg(ref string input)
+        {
+            input = "Modified";
+        }
+
+        public static void StaticVoidWithOutRefArg(out string output)
+        {
+            output = "Replaced";
+        }
+
+        public static bool StaticBoolWithRefArg(ref int input)
+        {
+            input += 1;
+            return input == 2;
+        }
+
+        public static bool StaticBoolWithOutArg(out int output)
+        {
+            output = 10;
+            return false;
+        }
+
+        public static void StaticVoidWithMultipleRefArgs(string value, ref int refInt, out bool outBool)
+        {
+            refInt += value.Length;
+            outBool = true;
+        }
+
+        public void InstanceVoidWithRefArg(string value, ref int refInf)
+        {
+            refInf += value.Length;
+        }
+
+        public void InstanceVoidWithOutArg(string value, out int outInt)
+        {
+            outInt = value.Length;
+        }
+
+        public bool InstanceBoolWithRefArg(ref int refInt)
+        {
+            refInt += 1;
+            return refInt == 2;
+        }
+
+        public bool InstanceBoolWithOutArg(out int outInt)
+        {
+            outInt = 10;
+            return false;
+        }
     }
 
     public class BaseClass
@@ -152,6 +223,12 @@ namespace PSNetDetour.Tests
         {
             return input;
         }
+    }
+
+    public struct NonBlittableStruct
+    {
+        public int IntValue;
+        public string StringValue;
     }
 }
 '@

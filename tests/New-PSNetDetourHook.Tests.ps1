@@ -564,10 +564,388 @@ finally {
             } | Should -Throw '*Detouring generic methods or methods on generic types is not supported.'
         }
 
-        # TODO: Add tests for ref/out params
+        It "Hooks static void with blittable ref value type" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableRefArg([ref][int]) } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value | Should -Be 1
+
+                $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.Invoke($arg1)
+
+                $arg1.Value | Should -Be 2
+                $arg1.Value = 3
+            }
+            try {
+                $val = 1
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableRefArg([ref]$val)
+                $val | Should -Be 3
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static void with blittable out value type" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableOutArg([ref][int]) } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value | Should -Be 1
+
+                $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.Invoke($arg1)
+
+                $arg1.Value | Should -Be 20
+                $arg1.Value = 3
+            }
+            try {
+                $val = 1
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableOutArg([ref]$val)
+                $val | Should -Be 3
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static void with non-blittable ref value type" {
+            $h = New-PSNetDetourHook -Source {
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithNonBlittableRefArg([ref][PSNetDetour.Tests.NonBlittableStruct])
+            } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value.IntValue | Should -Be 10
+                $arg1.Value.StringValue | Should -Be 'Test'
+
+                $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.Invoke($arg1)
+
+                $arg1.Value.IntValue | Should -Be 20
+                $arg1.Value.StringValue | Should -Be 'Test Modified'
+
+                $arg1.Value.IntValue = 30
+                $arg1.Value.StringValue = 'NewValue'
+            }
+            try {
+                $val = [PSNetDetour.Tests.NonBlittableStruct]::new()
+                $val.IntValue = 10
+                $val.StringValue = 'Test'
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithNonBlittableRefArg([ref]$val)
+                $val.IntValue | Should -Be 30
+                $val.StringValue | Should -Be 'NewValue'
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static void with non-blittable out value type" {
+            $h = New-PSNetDetourHook -Source {
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithNonBlittableOutArg([ref][PSNetDetour.Tests.NonBlittableStruct])
+            } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value.IntValue | Should -Be 10
+                $arg1.Value.StringValue | Should -Be 'Test'
+
+                $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.Invoke($arg1)
+
+                $arg1.Value.IntValue | Should -Be 30
+                $arg1.Value.StringValue | Should -Be 'Hello'
+
+                $arg1.Value.IntValue = 40
+                $arg1.Value.StringValue = 'NewValue'
+            }
+            try {
+                $val = [PSNetDetour.Tests.NonBlittableStruct]::new()
+                $val.IntValue = 10
+                $val.StringValue = 'Test'
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithNonBlittableOutArg([ref]$val)
+                $val.IntValue | Should -Be 40
+                $val.StringValue | Should -Be 'NewValue'
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static void with ref reference type" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidWithRefRefArg([ref][string]) } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value | Should -Be 'Initial'
+
+                $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.Invoke($arg1)
+
+                $arg1.Value | Should -Be 'Modified'
+                $arg1.Value = 'NewValue'
+            }
+            try {
+                $val = 'Initial'
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithRefRefArg([ref]$val)
+                $val | Should -Be 'NewValue'
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static void with out reference type" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidWithOutRefArg([ref][string]) } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value | Should -Be 'Initial'
+
+                $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.Invoke($arg1)
+
+                $arg1.Value | Should -Be 'Replaced'
+                $arg1.Value = 'NewValue'
+            }
+            try {
+                $val = 'Initial'
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithOutRefArg([ref]$val)
+                $val | Should -Be 'NewValue'
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static bool with ref arg" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticBoolWithRefArg([ref][int]) } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value | Should -Be 1
+
+                $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.Invoke($arg1)
+
+                $arg1.Value | Should -Be 2
+                $arg1.Value = 3
+            }
+            try {
+                $val = 1
+                [PSNetDetour.Tests.TestClass]::StaticBoolWithRefArg([ref]$val) | Should -BeTrue
+                $val | Should -Be 3
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static bool with out arg" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticBoolWithOutArg([ref][int]) } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value | Should -Be 1
+
+                $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.Invoke($arg1)
+
+                $arg1.Value | Should -Be 10
+                $arg1.Value = 3
+            }
+            try {
+                $val = 1
+                [PSNetDetour.Tests.TestClass]::StaticBoolWithOutArg([ref]$val) | Should -BeFalse
+                $val | Should -Be 3
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks instance void with ref arg" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstanceVoidWithRefArg([string], [ref][int]) } -Hook {
+                param ($arg1, $arg2)
+
+                $arg1 | Should -Be 'Hello'
+
+                $arg2.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg2.Value | Should -Be 1
+
+                $Detour.Instance | Should -Not -BeNullOrEmpty
+                $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestClass])
+
+                $Detour.Invoke($arg1, $arg2)
+
+                $arg2.Value | Should -Be 6
+                $arg2.Value = 3
+            }
+            try {
+                $i = [PSNetDetour.Tests.TestClass]::new()
+                $val = 1
+                $i.InstanceVoidWithRefArg('Hello', [ref]$val)
+                $val | Should -Be 3
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks instance void with out arg" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstanceVoidWithOutArg([string], [ref][int]) } -Hook {
+                param ($arg1, $arg2)
+
+                $arg1 | Should -Be 'Hello'
+
+                $arg2.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg2.Value | Should -Be 1
+
+                $Detour.Instance | Should -Not -BeNullOrEmpty
+                $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestClass])
+
+                $Detour.Invoke($arg1, $arg2)
+
+                $arg2.Value | Should -Be 5
+                $arg2.Value = 3
+            }
+            try {
+                $i = [PSNetDetour.Tests.TestClass]::new()
+                $val = 1
+                $i.InstanceVoidWithOutArg('Hello', [ref]$val)
+                $val | Should -Be 3
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks instance bool with ref arg" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstanceBoolWithRefArg([ref][int]) } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value | Should -Be 1
+
+                $Detour.Instance | Should -Not -BeNullOrEmpty
+                $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestClass])
+
+                $Detour.Invoke($arg1)
+
+                $arg1.Value | Should -Be 2
+                $arg1.Value = 3
+            }
+            try {
+                $i = [PSNetDetour.Tests.TestClass]::new()
+                $val = 1
+                $i.InstanceBoolWithRefArg([ref]$val) | Should -BeTrue
+                $val | Should -Be 3
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks instance bool with out arg" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstanceBoolWithOutArg([ref][int]) } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg1.Value | Should -Be 1
+
+                $Detour.Instance | Should -Not -BeNullOrEmpty
+                $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestClass])
+
+                $Detour.Invoke($arg1)
+
+                $arg1.Value | Should -Be 10
+                $arg1.Value = 3
+            }
+            try {
+                $i = [PSNetDetour.Tests.TestClass]::new()
+                $val = 1
+                $i.InstanceBoolWithOutArg([ref]$val) | Should -BeFalse
+                $val | Should -Be 3
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static method with many ref args" {
+            $h = New-PSNetDetourHook -Source {
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithMultipleRefArgs([string], [ref][int], [ref][bool])
+            } -Hook {
+                param ($arg1, $arg2, $arg3)
+
+                $arg1 | Should -Be 'Test'
+
+                $arg2.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg2.Value | Should -Be 10
+
+                $arg3.GetType().FullName | Should -Be 'System.Management.Automation.PSReference'
+                $arg3.Value | Should -BeFalse
+
+                $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.Invoke($arg1, $arg2, $arg3)
+
+                $arg1 | Should -Be 'Test'
+                $arg2.Value | Should -Be 14
+                $arg3.Value | Should -BeTrue
+
+                $arg2.Value = 20
+            }
+            try {
+                $intVal = 10
+                $boolVal = $false
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithMultipleRefArgs('Test', [ref]$intVal, [ref]$boolVal)
+                $intVal | Should -Be 20
+                $boolVal | Should -BeTrue
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Casts ref value set in hook to correct type" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableRefArg([ref][int]) } -Hook {
+                param ($arg1)
+
+                $arg1.Value = '5'
+            }
+            try {
+                $val = 1
+                [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableRefArg([ref]$val)
+                $val | Should -Be 5
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Errors when failing to cast ref value set in hook to correct type" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableRefArg([ref][int]) } -Hook {
+                param ($arg1)
+
+                $arg1.Value = 'abc'
+            }
+            try {
+                {
+                    $val = 1
+                    [PSNetDetour.Tests.TestClass]::StaticVoidWithBlittableRefArg([ref]$val)
+                } | Should -Throw '*Cannot convert value "abc" to type "System.Int32".*'
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
         # TODO: Add tests for host output
         # TODO: Add tests for async
         # TODO: Add tests for method invoked in another thread
+        # TODO: Add tests for recursive hooks
     }
 
     Context "Invalid ScriptBlock Targets" {
@@ -649,10 +1027,10 @@ finally {
             } | Should -Throw '*ScriptBlock method call method name must be a string constant.'
         }
 
-        It "Hash method with args that are not types" {
+        It "Has method with args that are not types" {
             {
                 New-PSNetDetourHook -Source { [IO.Path]::Combine('a', 'b') } -Hook {}
-            } | Should -Throw '*ScriptBlock method call arguments must be type expressions.'
+            } | Should -Throw '*Method call argument entry must be a single type value or `[ref]`[typehere].'
         }
 
         It "Uses unknown type" {
