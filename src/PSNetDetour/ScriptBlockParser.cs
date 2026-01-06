@@ -135,15 +135,36 @@ internal static class ScriptBlockParser
         {
             parameterTypes = [.. invokeAst.Arguments.Select(a =>
             {
+                bool isRef = false;
+                if (a is ConvertExpressionAst convertAst && convertAst.Attribute is TypeConstraintAst typeConstraint)
+                {
+                    if (typeConstraint.TypeName.GetReflectionType() != typeof(PSReference))
+                    {
+                        throw CreateParseError(
+                            typeConstraint.Extent,
+                            "ScriptBlockArgumentInvalidTypeConstraint",
+                            "Unknown script argument type constraint, only [ref] is supported for ref/out arguments.");
+                    }
+
+                    a = convertAst.Child;
+                    isRef = true;
+                }
+
                 if (a is not TypeExpressionAst typeArgAst)
                 {
                     throw CreateParseError(
                         a.Extent,
                         "ScriptBlockArgumentNotTypeExpression",
-                        "ScriptBlock method call arguments must be type expressions.");
+                        "Method call argument entry must be a single type value or [ref][typehere].");
                 }
 
-                return ResolveType(typeArgAst.TypeName);
+                Type resolvedType = ResolveType(typeArgAst.TypeName);
+                if (isRef)
+                {
+                    resolvedType = resolvedType.MakeByRefType();
+                }
+
+                return resolvedType;
             })];
         }
 

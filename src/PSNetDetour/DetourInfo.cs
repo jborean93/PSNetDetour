@@ -45,15 +45,15 @@ internal sealed class DetourInfo
         }
     }
 
-    private static MethodInfo? _arrayEmptyMethod;
+    private static MethodInfo? _array_Empty;
 
-    private static MethodInfo ArrayEmptyMethod
+    private static MethodInfo Array_Empty
     {
         get
         {
-            if (_arrayEmptyMethod is null)
+            if (_array_Empty is null)
             {
-                _arrayEmptyMethod = typeof(Array).GetMethod(
+                _array_Empty = typeof(Array).GetMethod(
                     "Empty",
                     BindingFlags.Public | BindingFlags.Static,
                     null,
@@ -62,7 +62,7 @@ internal sealed class DetourInfo
                     ?? throw new RuntimeException("Failed to get Array.Empty<T>() method info.");
             }
 
-            return _arrayEmptyMethod;
+            return _array_Empty;
         }
     }
 
@@ -102,15 +102,15 @@ internal sealed class DetourInfo
         }
     }
 
-    private static ConstructorInfo? _objectCtor;
+    private static ConstructorInfo? _object_Ctor;
 
-    private static ConstructorInfo ObjectCtor
+    private static ConstructorInfo Object_Ctor
     {
         get
         {
-            if (_objectCtor is null)
+            if (_object_Ctor is null)
             {
-                _objectCtor = typeof(object).GetConstructor(
+                _object_Ctor = typeof(object).GetConstructor(
                     BindingFlags.Public | BindingFlags.Instance,
                     null,
                     [],
@@ -118,7 +118,90 @@ internal sealed class DetourInfo
                     ?? throw new RuntimeException("Failed to get object constructor method info.");
             }
 
-            return _objectCtor;
+            return _object_Ctor;
+        }
+    }
+
+    private static ConstructorInfo? _psReference_Ctor;
+
+    private static ConstructorInfo PSReference_Ctor
+    {
+        get
+        {
+            if (_psReference_Ctor is null)
+            {
+                _psReference_Ctor = typeof(PSReference).GetConstructor(
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    [ typeof(object) ],
+                    null)
+                    ?? throw new RuntimeException("Failed to get PSReference constructor method info.");
+            }
+
+            return _psReference_Ctor;
+        }
+    }
+
+    private static MethodInfo? _psReference_GetValue;
+
+    private static MethodInfo PSReference_GetValue
+    {
+        get
+        {
+            if (_psReference_GetValue is null)
+            {
+                _psReference_GetValue = typeof(PSReference).GetMethod(
+                    "get_Value",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    [],
+                    null)
+                    ?? throw new RuntimeException("Failed to get PSReference.get_Value method info.");
+            }
+
+            return _psReference_GetValue;
+        }
+    }
+
+    private static MethodInfo? _psReference_SetValue;
+
+    private static MethodInfo PSReference_SetValue
+    {
+        get
+        {
+            if (_psReference_SetValue is null)
+            {
+                _psReference_SetValue = typeof(PSReference).GetMethod(
+                    "set_Value",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    [ typeof(object) ],
+                    null)
+                    ?? throw new RuntimeException("Failed to get PSReference.set_Value method info.");
+            }
+
+            return _psReference_SetValue;
+        }
+    }
+
+    private static MethodInfo? _languagePrimitives_ConvertTo;
+
+    private static MethodInfo LanguagePrimitives_ConvertTo
+    {
+        get
+        {
+            if (_languagePrimitives_ConvertTo is null)
+            {
+                _languagePrimitives_ConvertTo = typeof(LanguagePrimitives).GetMethod(
+                    "ConvertTo",
+                    BindingFlags.Public | BindingFlags.Static,
+                    null,
+                    [ typeof(object)  ],
+                    null)
+                    ?? throw new RuntimeException("Failed to get LanguagePrimitives.ConvertTo method info.");
+            }
+
+            return _languagePrimitives_ConvertTo;
         }
     }
 
@@ -154,6 +237,8 @@ internal sealed class DetourInfo
             returnType,
             methodParameterTypes);
 
+        // This is the type that will be set to $Detour that can be used in the
+        // ScriptBlock to access the Instance and original method to invoke.
         Type detourMetaType = CreateDetourMetaType(
             $"{typeName}DetourMeta",
             returnType,
@@ -180,36 +265,92 @@ internal sealed class DetourInfo
 
         While the type isn't defined under ScriptBlockInvokeContext, MonoMod
         Will set this to the instance of ScriptBlockInvokeContext provided
-        when creating the Hook delegate.
+        when creating the Hook delegate. For static methods object instance
+        is omitted as an arg and null is passed to InvokeScriptBlock. The args
+        are treated as separate parameters and represented by ... to indicate
+        that they are variable depending on the method signature.
 
-        public void Hook(Action<...> originalMethod, ...)
-            => this.InvokeScriptBlockVoid(originalMethod, null, ...);
+        public ... Hook(Delegate originalMethod, [object instance], ... args)
+        {
+            // Store each ref/out argument as a local PSReference variable
+            object[] localArgs = new object[...];
+            foreach (... in args)
+            {
+                localArgs[i] = ... is ByRef
+                    ? new PSReference(...)
+                    : ...;
+            }
 
-        public void Hook(Action<InstanceType, ...> originalMethod, InstanceType instance, ...)
-            => this.InvokeScriptBlockVoid(originalMethod, instance, ...);
+            ... res = InvokeScriptBlock(originalMethod, instance, localArgs)
 
-        public ReturnType Hook(Func<..., ReturnType> originalMethod, ...)
-            => this.InvokeScriptBlock(originalMethod, null, ...);
+            foreach (l in localArgs)
+            {
+                if (l is PSReference)
+                {
+                    // Unbox/ref back to original ByRef argument
+                    args[i] = LanguagePrimitives.ConvertTo<T>(l.Value);
+                }
+            }
 
-        public ReturnType Hook(Func<InstanceType, ..., ReturnType> originalMethod, InstanceType instance, ...)
-            => this.InvokeScriptBlock(originalMethod, instance, ...);
+            return res;
+        }
         */
+
+        int ldargArgumentIndexOffset = isStatic ? 2 : 3;
 
         ILGenerator ilGen = hookedMethod.GetILGenerator();
 
-        ilGen.Emit(OpCodes.Ldarg_0); // Load ScriptBlockInvokeContext (this)
+        LocalBuilder? resultLocal = null;
+        if (returnType != typeof(void))
+        {
+            resultLocal = ilGen.DeclareLocal(returnType);
+        }
 
+        // Scan all args to see if we have any ByRef parameters. These need to
+        // stored as locals as PSReference instances so we can pass them to the
+        // ScriptBlock and update the original ByRef parameters after the call.
+        (Type, LocalBuilder)?[] boxedRefLocal = new (Type, LocalBuilder)?[parameterTypes.Length];
+        for (int i = 0; i < parameterTypes.Length; i++)
+        {
+            Type refType = parameterTypes[i];
+            if (!refType.IsByRef)
+            {
+                continue;
+            }
+
+            Type paramType = refType.GetElementType()
+                ?? throw new RuntimeException("Failed to get element type of ByRef parameter.");
+            LocalBuilder localVal = ilGen.DeclareLocal(typeof(PSReference));
+            boxedRefLocal[i] = (paramType, localVal);
+
+            ilGen.Emit(OpCodes.Ldarg, i + ldargArgumentIndexOffset);
+
+            // Loads (and boxes value types) to create PSReference
+            if (paramType.IsValueType)
+            {
+                ilGen.Emit(OpCodes.Ldobj, paramType);
+                ilGen.Emit(OpCodes.Box, paramType);
+            }
+            else
+            {
+                ilGen.Emit(OpCodes.Ldind_Ref);
+            }
+
+            ilGen.Emit(OpCodes.Newobj, PSReference_Ctor); // Create new PSReference
+            ilGen.Emit(OpCodes.Stloc, localVal); // Store the PSReference in the local variable
+        }
+
+        ilGen.Emit(OpCodes.Ldarg_0); // Load ScriptBlockInvokeContext (this)
         ilGen.Emit(OpCodes.Ldarg_1); // Load original delegate (arg0)
 
-        int argIndexOffset = 2;
-        if (!isStatic)
+        if (isStatic)
         {
-            argIndexOffset++;
-            ilGen.Emit(OpCodes.Ldarg_2); // Load the instance of the original method (arg1)
+            ilGen.Emit(OpCodes.Ldnull); // Load null for static methods to provide as the instance
         }
         else
         {
-            ilGen.Emit(OpCodes.Ldnull); // Load null for static methods to provide as the instance
+
+            ilGen.Emit(OpCodes.Ldarg_2); // Load the instance of the original method (arg1)
         }
 
         if (parameterTypes.Length > 0)
@@ -222,14 +363,19 @@ internal sealed class DetourInfo
                 ilGen.Emit(OpCodes.Dup);
                 ilGen.Emit(OpCodes.Ldc_I4, i); // Array index
 
-                if (parameterTypes[i].IsValueType)
+                (Type, LocalBuilder)? refLocal = boxedRefLocal[i];
+                if (refLocal is not null)
                 {
-                    ilGen.Emit(OpCodes.Ldarg, i + argIndexOffset); // Load argument
+                    ilGen.Emit(OpCodes.Ldloc, refLocal.Value.Item2); // Load PSReference local
+                }
+                else if (parameterTypes[i].IsValueType)
+                {
+                    ilGen.Emit(OpCodes.Ldarg, i + ldargArgumentIndexOffset); // Load argument
                     ilGen.Emit(OpCodes.Box, parameterTypes[i]);
                 }
                 else
                 {
-                    ilGen.Emit(OpCodes.Ldarg_S, i + argIndexOffset); // Load argument by reference
+                    ilGen.Emit(OpCodes.Ldarg_S, i + ldargArgumentIndexOffset); // Load argument by reference
                 }
 
                 ilGen.Emit(OpCodes.Stelem_Ref); // Store in array
@@ -237,10 +383,50 @@ internal sealed class DetourInfo
         }
         else
         {
-            ilGen.Emit(OpCodes.Call, ArrayEmptyMethod.MakeGenericMethod(typeof(object))); // Call Array.Empty<object>()
+            ilGen.Emit(OpCodes.Call, Array_Empty.MakeGenericMethod(typeof(object))); // Call Array.Empty<object>()
         }
 
         ilGen.Emit(OpCodes.Call, targetDelegate); // Call InvokeScriptBlock
+
+        if (resultLocal is not null)
+        {
+            ilGen.Emit(OpCodes.Stloc, resultLocal); // Store result
+        }
+
+        // Unbox/ref back any ByRef parameters from the PSReference locals
+        for (int i = 0; i < parameterTypes.Length; i++)
+        {
+            (Type, LocalBuilder)? refLocal = boxedRefLocal[i];
+            if (refLocal is null)
+            {
+                continue;
+            }
+
+            Type argType = refLocal.Value.Item1;
+            LocalBuilder psRefLocal = refLocal.Value.Item2;
+            MethodInfo convertMethod = LanguagePrimitives_ConvertTo.MakeGenericMethod(argType);
+
+            ilGen.Emit(OpCodes.Ldarg, i + ldargArgumentIndexOffset); // Load original ByRef argument
+            ilGen.Emit(OpCodes.Ldloc, psRefLocal); // Load PSReference local for the arg
+            ilGen.Emit(OpCodes.Callvirt, PSReference_GetValue); // Call PSReference.get_Value
+            ilGen.Emit(OpCodes.Call, convertMethod); // Convert to the proper type
+
+            // Set the value back to the original ByRef argument
+            if (argType.IsValueType)
+            {
+                ilGen.Emit(OpCodes.Stobj, argType);
+            }
+            else
+            {
+                ilGen.Emit(OpCodes.Stind_Ref);
+            }
+        }
+
+        if (resultLocal is not null)
+        {
+            ilGen.Emit(OpCodes.Ldloc, resultLocal); // Load result for return
+        }
+
         ilGen.Emit(OpCodes.Ret);
 
         Type createdType = typeBuilder.CreateType()
@@ -322,7 +508,7 @@ internal sealed class DetourInfo
 
         ILGenerator ctorIl = constructorBuilder.GetILGenerator();
         ctorIl.Emit(OpCodes.Ldarg_0); // Load this
-        ctorIl.Emit(OpCodes.Call, ObjectCtor); // Call base constructor
+        ctorIl.Emit(OpCodes.Call, Object_Ctor); // Call base constructor
         ctorIl.Emit(OpCodes.Ldarg_0); // Load this
         ctorIl.Emit(OpCodes.Ldarg_1); // Load delegate argument
         ctorIl.Emit(OpCodes.Stfld, delegateField); // Store delegate in field
