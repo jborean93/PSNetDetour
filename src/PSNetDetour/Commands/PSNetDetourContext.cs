@@ -33,7 +33,7 @@ public sealed class UsePSNetDetourContext : PSCmdlet
                 object? item = e.ItemAdded;
                 if (item is not null && PSObject.AsPSObject(item).BaseObject is NetDetourHook hook)
                 {
-                    hook.InvokeContext.SetCmdletContext(Host, ps.Streams);
+                    hook.InvokeContext.SetCmdletContext(ps.Streams);
                     hooks.Add(hook);
                     return;
                 }
@@ -45,32 +45,8 @@ public sealed class UsePSNetDetourContext : PSCmdlet
             {
                 WriteError(ps.Streams.Error[e.Index]);
             };
-            ps.Streams.Progress.DataAdded += (sender, e) =>
-            {
-                WriteProgress(ps.Streams.Progress[e.Index]);
-            };
-            ps.Streams.Verbose.DataAdded += (sender, e) =>
-            {
-                WriteVerbose(ps.Streams.Verbose[e.Index].Message);
-            };
-            ps.Streams.Debug.DataAdded += (sender, e) =>
-            {
-                WriteDebug(ps.Streams.Debug[e.Index].Message);
-            };
-            ps.Streams.Warning.DataAdded += (sender, e) =>
-            {
-                WriteWarning(ps.Streams.Warning[e.Index].Message);
-            };
-            ps.Streams.Information.DataAdded += (sender, e) =>
-            {
-                WriteInformation(ps.Streams.Information[e.Index]);
-            };
 
-            PSInvocationSettings settings = new()
-            {
-                Host = Host,
-            };
-            ps.Invoke(null, output, settings);
+            ps.Invoke(null, output);
         }
         finally
         {

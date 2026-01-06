@@ -1,7 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Management.Automation;
-using System.Management.Automation.Host;
 using System.Reflection;
 
 namespace PSNetDetour;
@@ -14,7 +13,6 @@ internal class ScriptBlockInvokeContext
     public InvocationInfo MyInvocation { get; }
 
     public PSDataStreams? ContextStreams { get; private set; }
-    public PSHost? Host { get; private set; }
 
     public ScriptBlockInvokeContext(
         MethodBase detouredMethod,
@@ -28,15 +26,13 @@ internal class ScriptBlockInvokeContext
         MyInvocation = myInvocation;
     }
 
-    public void SetCmdletContext(PSHost? host, PSDataStreams contextStreams)
+    public void SetCmdletContext(PSDataStreams contextStreams)
     {
-        Host = host;
         ContextStreams = contextStreams;
     }
 
     public void UnsetCmdletContext()
     {
-        Host = null;
         ContextStreams = null;
     }
 
@@ -64,11 +60,6 @@ internal class ScriptBlockInvokeContext
 
                 ContextStreams.Error.Add(error);
             };
-            ps.Streams.Progress = ContextStreams.Progress;
-            ps.Streams.Verbose = ContextStreams.Verbose;
-            ps.Streams.Debug = ContextStreams.Debug;
-            ps.Streams.Warning = ContextStreams.Warning;
-            ps.Streams.Information = ContextStreams.Information;
         }
 
         object? detourObj = self is null
@@ -80,16 +71,10 @@ internal class ScriptBlockInvokeContext
             .AddArgument(ScriptBlock)
             .AddArgument(args);
 
-        PSInvocationSettings settings = new();
-        if (Host is not null)
-        {
-            settings.Host = Host;
-        }
-
-        Collection<PSObject> output;
+        Collection<PSObject?> results;
         try
         {
-            output = ps.Invoke(null, settings);
+            results = ps.Invoke();
         }
         catch (Exception e)
         {
@@ -98,20 +83,19 @@ internal class ScriptBlockInvokeContext
                 e);
         }
 
-        object? outputValue = null;
-        if (output.Count > 0)
+        PSObject? outputValue = null;
+        if (results.Count > 0)
         {
-            outputValue = output[0].BaseObject;
-            if (output.Count > 1 && ContextStreams is not null)
+            outputValue = results[0];
+            if (results.Count > 1)
             {
-                ContextStreams.Warning.Add(
+                ContextStreams?.Warning.Add(
                     new WarningRecord(
-                        "Multiple return values from ScriptBlock; only the first will be used.",
-                        "MultipleReturnValues"));
+                        "MultipleHookOutputValues",
+                        "Received multiple output values from hook; only the first will be used."));
             }
         }
 
         return LanguagePrimitives.ConvertTo<T>(outputValue);
-
     }
 }
