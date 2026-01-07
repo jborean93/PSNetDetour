@@ -2,10 +2,10 @@ using namespace System.IO
 
 . ([Path]::Combine($PSScriptRoot, 'common.ps1'))
 
-Describe "Use-PSNetDetourContext" {
+Describe "Use-NetDetourContext" {
     It "Runs in a child scope" {
         $a = 1
-        Use-PSNetDetourContext {
+        Use-NetDetourContext {
             $a = 2
         }
         $a | Should -Be 1
@@ -13,15 +13,15 @@ Describe "Use-PSNetDetourContext" {
 
     It "Runs in the same scope" {
         $a = 1
-        Use-PSNetDetourContext -NoNewScope {
+        Use-NetDetourContext -NoNewScope {
             $a = 2
         }
         $a | Should -Be 2
     }
 
     It "Stops hook outside ScriptBlock" {
-        Use-PSNetDetourContext {
-            New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+        Use-NetDetourContext {
+            New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
                 param ($arg1)
 
                 $arg1 | Should -Be 5
@@ -37,7 +37,7 @@ Describe "Use-PSNetDetourContext" {
         [PSNetDetour.Tests.TestClass]::StaticIntArgs(4) | Should -Be 5
     }
 
-    It "Sends streams to Use-PSNetDetourContext streams" {
+    It "Sends streams to Use-NetDetourContext streams" {
         $modulePath = Join-Path (Get-Module -Name PSNetDetour).ModuleBase 'PSNetDetour.psm1'
         $ps = [PowerShell]::Create()
 
@@ -53,8 +53,8 @@ Describe "Use-PSNetDetourContext" {
             $ProgressPreference = 'Continue'
             $InformationPreference = 'Continue'
 
-            Use-PSNetDetourContext {
-                New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidNoArgs() } -Hook {
+            Use-NetDetourContext {
+                New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidNoArgs() } -Hook {
                     Write-Error "error"
                     Write-Verbose "verbose"
                     Write-Debug "debug"
@@ -84,9 +84,9 @@ Describe "Use-PSNetDetourContext" {
 
         $ps.Streams.Error.Count | Should -Be 2
         $ps.Streams.Error[0].Exception.Message | Should -Be 'error'
-        $ps.Streams.Error[0].InvocationInfo.PositionMessage | Should -BeLike 'At line:12 char:17*'  # New-PSNetDetourHook line
+        $ps.Streams.Error[0].InvocationInfo.PositionMessage | Should -BeLike 'At line:12 char:17*'  # New-NetDetourHook line
         $ps.Streams.Error[1].Exception.Message | Should -Be 'outer'
-        $ps.Streams.Error[1].InvocationInfo.PositionMessage | Should -BeLike 'At line:11 char:13*'  # Use-PSNetDetourContext line
+        $ps.Streams.Error[1].InvocationInfo.PositionMessage | Should -BeLike 'At line:11 char:13*'  # Use-NetDetourContext line
 
         $ps.Streams.Progress.Count | Should -Be 2
         $ps.Streams.Progress[0].Activity | Should -Be 'Test Activity'
@@ -142,7 +142,7 @@ Describe "Use-PSNetDetourContext" {
         $ps.Dispose()
     }
 
-    It "Sends streams to Use-PSNetDetourContext streams with hook in Runspace" {
+    It "Sends streams to Use-NetDetourContext streams with hook in Runspace" {
         <#
         This is like the above test but due to the hook running in another
         runspace we can't forward the streams in realtime. Only the error
@@ -164,8 +164,8 @@ Describe "Use-PSNetDetourContext" {
             $ProgressPreference = 'Continue'
             $InformationPreference = 'Continue'
 
-            Use-PSNetDetourContext {
-                New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidNoArgs() } -Hook {
+            Use-NetDetourContext {
+                New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidNoArgs() } -Hook {
                     $ErrorActionPreference = 'Continue'
                     $VerbosePreference = 'Continue'
                     $DebugPreference = 'Continue'
@@ -202,9 +202,9 @@ Describe "Use-PSNetDetourContext" {
 
         $ps.Streams.Error.Count | Should -Be 2
         $ps.Streams.Error[0].Exception.Message | Should -Be 'error'
-        $ps.Streams.Error[0].InvocationInfo.PositionMessage | Should -BeLike 'At line:12 char:17*'  # New-PSNetDetourHook line
+        $ps.Streams.Error[0].InvocationInfo.PositionMessage | Should -BeLike 'At line:12 char:17*'  # New-NetDetourHook line
         $ps.Streams.Error[1].Exception.Message | Should -Be 'outer'
-        $ps.Streams.Error[1].InvocationInfo.PositionMessage | Should -BeLike 'At line:11 char:13*'  # Use-PSNetDetourContext line
+        $ps.Streams.Error[1].InvocationInfo.PositionMessage | Should -BeLike 'At line:11 char:13*'  # Use-NetDetourContext line
 
         # The remaining streams are all forwarded after the context ends so they appear
         # after the outer ones.
@@ -263,7 +263,7 @@ Describe "Use-PSNetDetourContext" {
         $ps.Dispose()
     }
 
-    It "Sends streams to Use-PSNetDetourContext streams with hook in Runspace and in another thread" {
+    It "Sends streams to Use-NetDetourContext streams with hook in Runspace and in another thread" {
         <#
         Just like the above the streams cannot be forwarded in realtime but as
         the hook is running in another thread we cannot forward the error
@@ -285,8 +285,8 @@ Describe "Use-PSNetDetourContext" {
             $ProgressPreference = 'Continue'
             $InformationPreference = 'Continue'
 
-            Use-PSNetDetourContext {
-                New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+            Use-NetDetourContext {
+                New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
                     $ErrorActionPreference = 'Continue'
                     $VerbosePreference = 'Continue'
                     $DebugPreference = 'Continue'
@@ -325,9 +325,9 @@ Describe "Use-PSNetDetourContext" {
 
         $ps.Streams.Error.Count | Should -Be 2
         $ps.Streams.Error[0].Exception.Message | Should -Be 'outer'
-        $ps.Streams.Error[0].InvocationInfo.PositionMessage | Should -BeLike 'At line:11 char:13*'  # Use-PSNetDetourContext line
+        $ps.Streams.Error[0].InvocationInfo.PositionMessage | Should -BeLike 'At line:11 char:13*'  # Use-NetDetourContext line
         $ps.Streams.Error[1].Exception.Message | Should -Be 'error'
-        $ps.Streams.Error[1].InvocationInfo.PositionMessage | Should -BeLike 'At line:11 char:13*'  # Use-PSNetDetourContext line
+        $ps.Streams.Error[1].InvocationInfo.PositionMessage | Should -BeLike 'At line:11 char:13*'  # Use-NetDetourContext line
 
         # The remaining streams are all forwarded after the context ends so they appear
         # after the outer ones.
@@ -388,8 +388,8 @@ Describe "Use-PSNetDetourContext" {
 
     It "Throws exception inside hook in context" {
         {
-            Use-PSNetDetourContext {
-                New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidNoArgs() } -Hook {
+            Use-NetDetourContext {
+                New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidNoArgs() } -Hook {
                     throw "hook exception"
                 }
 
@@ -408,8 +408,8 @@ Describe "Use-PSNetDetourContext" {
     It "Nests context calls" {
         [PSNetDetour.Tests.TestClass]::StaticIntArgs(10) | Should -Be 11
 
-        Use-PSNetDetourContext {
-            New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+        Use-NetDetourContext {
+            New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
                 param ($arg1)
 
                 $Detour.Invoke($arg1) + 1
@@ -417,8 +417,8 @@ Describe "Use-PSNetDetourContext" {
 
             [PSNetDetour.Tests.TestClass]::StaticIntArgs(10) | Should -Be 12
 
-            Use-PSNetDetourContext {
-                New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+            Use-NetDetourContext {
+                New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
                     param ($arg1)
 
                     $Detour.Invoke($arg1) + 1
@@ -434,16 +434,16 @@ Describe "Use-PSNetDetourContext" {
     }
 
     It "Captures hooks interleaved with normal output" {
-        $out = Use-PSNetDetourContext {
-            New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() } -Hook { 10 }
+        $out = Use-NetDetourContext {
+            New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() } -Hook { 10 }
 
             1
 
-            New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook { 11 }
+            New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook { 11 }
 
             2
 
-            New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstanceIntNoArgs() } -Hook { 12 }
+            New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstanceIntNoArgs() } -Hook { 12 }
 
             [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() | Should -Be 10
             [PSNetDetour.Tests.TestClass]::StaticIntArgs(5) | Should -Be 11
@@ -462,8 +462,8 @@ Describe "Use-PSNetDetourContext" {
     It "Ignores explicitly captured hooks" {
         $hook = $null
         try {
-            Use-PSNetDetourContext -NoNewScope {
-                $hook = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() } -Hook { 10 }
+            Use-NetDetourContext -NoNewScope {
+                $hook = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() } -Hook { 10 }
 
                 [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() | Should -Be 10
             }
@@ -484,7 +484,7 @@ Describe "Use-PSNetDetourContext" {
 
     It "Uses function as context ScriptBlock" {
         Function run {
-            New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+            New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
                 param ($arg1)
 
                 $Detour.Invoke($arg1) + 1
@@ -493,7 +493,23 @@ Describe "Use-PSNetDetourContext" {
             [PSNetDetour.Tests.TestClass]::StaticIntArgs(10) | Should -Be 12
         }
 
-        Use-PSNetDetourContext ${function:run}
+        Use-NetDetourContext ${function:run}
+    }
+
+    It "Writes warning for hook with too much output" {
+        $warn = @()
+        Use-NetDetourContext {
+            New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() } -Hook {
+                10
+                "abc"
+                return @{ key = "value" }
+            }
+
+            [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() | Should -Be 10
+        } -WarningVariable warn -WarningAction Ignore
+
+        $warn.Count | Should -Be 1
+        $warn[0] | Should -Be "Hook for 'TestClass static Int32 StaticIntNoArgs()' produced multiple output values; only the first will be used."
     }
 
     It "Strips the runspace affinity from the <SbkType>" -TestCases @(
@@ -524,7 +540,7 @@ Describe "Use-PSNetDetourContext" {
             }).AddArgument($SbkType).Invoke()[0]
             $ps.Dispose()
 
-            Use-PSNetDetourContext $toRun | Should -Be 'from main'
+            Use-NetDetourContext $toRun | Should -Be 'from main'
         }
         finally {
             $rs.Dispose()

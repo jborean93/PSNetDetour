@@ -1,4 +1,5 @@
 using namespace System.IO
+using namespace System.Management.Automation
 
 $moduleName = (Get-Item ([Path]::Combine($PSScriptRoot, '..', 'module', '*.psd1'))).BaseName
 $manifestPath = [Path]::Combine($PSScriptRoot, '..', 'output', $moduleName)
@@ -21,7 +22,7 @@ Function Global:Complete {
         $Expression
     )
 
-    [System.Management.Automation.CommandCompletion]::CompleteInput(
+    [CommandCompletion]::CompleteInput(
         $Expression,
         $Expression.Length,
         $null).CompletionMatches

@@ -12,8 +12,8 @@ if (-not $IsCoreClr) {
     # PowerShell 5.1 has no concept of an Assembly Load Context so it will
     # just load the module assembly directly.
 
-    $innerMod = if ('PSNetDetour.Commands.NewPSNetDetourHook' -as [type]) {
-        $modAssembly = [PSNetDetour.Commands.NewPSNetDetourHook].Assembly
+    $innerMod = if ('PSNetDetour.Commands.NewNetDetourHook' -as [type]) {
+        $modAssembly = [PSNetDetour.Commands.NewNetDetourHook].Assembly
         & $importModule -Assembly $modAssembly -Force -PassThru
     }
     else {

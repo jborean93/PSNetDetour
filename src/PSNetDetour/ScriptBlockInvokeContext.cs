@@ -13,7 +13,6 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
     private readonly MethodBase _detouredMethod;
     private readonly Type _detourMetaType;
     private readonly InvocationInfo _myInvocation;
-    private readonly object? _state;
     private readonly ScriptBlock _scriptBlock;
     private readonly Runspace? _runspace;
     private readonly RunspacePool? _runspacePool;
@@ -37,13 +36,22 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         _detouredMethod = detouredMethod;
         _detourMetaType = detourMetaType;
         _myInvocation = myInvocation;
-        _state = state;
         _scriptBlock = scriptBlock;
         _runspace = runspace;
         _runspacePool = runspacePool;
         _disposeRunspace = disposeRunspace;
+
+        State = state;
     }
 
+    internal object? State { get; }
+
+    /// <summary>
+    /// Called by Use-NetDetourContext to provide the cmdlet streams to
+    /// forward output to.
+    /// </summary>
+    /// <param name="contextStreams">The cmdlet's PowerShell data streams to forward output to.</param>
+    /// <param name="runspaceErrors">A list to capture errors from the runspace if the hook is run in a separate runspace/thread.</param>
     public void SetCmdletContext(PSDataStreams contextStreams, List<ErrorRecord> runspaceErrors)
     {
         _contextStreams = contextStreams;
@@ -68,10 +76,10 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
 
                 // We set the InvocationInfo to the cmdlet that created the
                 // hook so the caller can see where it is from rather than the
-                // Use-PSNetDetourContext cmdlet.
+                // Use-NetDetourContext cmdlet.
                 ReflectionHelper.ErrorRecord_SetInvocationInfo(error, _myInvocation);
 
-                // We set this property so Use-PSNetDetourContext doesn't
+                // We set this property so Use-NetDetourContext doesn't
                 // overwrite our InvocationInfo when it calls WriteError.
                 ReflectionHelper.ErrorRecord_SetPreserveInvocationInfoOnce(error, true);
 
@@ -103,8 +111,8 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         }
 
         object? detourObj = self is null
-            ? Activator.CreateInstance(_detourMetaType, [orig, _state])
-            : Activator.CreateInstance(_detourMetaType, [orig, _state, self]);
+            ? Activator.CreateInstance(_detourMetaType, [orig, State])
+            : Activator.CreateInstance(_detourMetaType, [orig, State, self]);
 
         ps.AddScript("$Detour = $args[0]; $methArgs = $args[1]; & $args[2].Invoke($args[3]) @methArgs", true)
             .AddArgument(detourObj)
@@ -133,16 +141,16 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
                 _contextStreams?.Warning.Add(
                     new WarningRecord(
                         "MultipleHookOutputValues",
-                        "Received multiple output values from hook; only the first will be used."));
+                        $"Hook for '{_methodSignature}' produced multiple output values; only the first will be used."));
             }
         }
 
-        if (_contextStreams is not null)
+        if (_contextStreams is not null && _runspaceErrors is not null)
         {
             // We attempt to forward the ErrorRecord to the context cmdlet.
             // PSDataCollection will fail if we are in another thread so we
             // fallback to storing them in a List the cmdlet checks on exit.
-            ForwardUncapturedStreams(uncapturedErrors, _contextStreams.Error, backup: _runspaceErrors);
+            ForwardUncapturedStreams(uncapturedErrors, _contextStreams.Error, _runspaceErrors);
         }
 
         return LanguagePrimitives.ConvertTo<T>(outputValue);
@@ -182,7 +190,7 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
     private static void ForwardUncapturedStreams<T>(
         IList<T> source,
         IList<T> destination,
-        IList<T>? backup = null)
+        IList<T> backup)
     {
         if (source.Count == 0)
         {
@@ -198,16 +206,9 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         }
         catch (PSInvalidOperationException)
         {
-            if (backup is not null)
+            foreach (T record in source)
             {
-                foreach (T record in source)
-                {
-                    backup.Add(record);
-                }
-            }
-            else
-            {
-                throw;
+                backup.Add(record);
             }
         }
     }

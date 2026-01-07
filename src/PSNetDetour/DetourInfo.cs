@@ -15,7 +15,14 @@ internal sealed class DetourInfo
 {
     internal const string AssemblyName = "PSNetDetour.Dynamic";
 
+    /// <summary>
+    /// Gets the method that can be used as the Hook target.
+    /// </summary>
     public MethodInfo DetourTarget { get; }
+
+    /// <summary>
+    /// Gets the type that contains the Invoke/Instance/State members for the invoke context.
+    /// </summary>
     public Type DetourMetaType { get; }
 
     public DetourInfo(
@@ -49,162 +56,91 @@ internal sealed class DetourInfo
 
     private static MethodInfo Array_Empty
     {
-        get
-        {
-            if (_array_Empty is null)
-            {
-                _array_Empty = typeof(Array).GetMethod(
-                    "Empty",
-                    BindingFlags.Public | BindingFlags.Static,
-                    null,
-                    [],
-                    null)
-                    ?? throw new RuntimeException("Failed to get Array.Empty<T>() method info.");
-            }
-
-            return _array_Empty;
-        }
+        get => _array_Empty ??= typeof(Array).GetMethod(
+            "Empty",
+            BindingFlags.Public | BindingFlags.Static,
+            null,
+            [],
+            null)
+            ?? throw new RuntimeException("Failed to get Array.Empty<T>() method info.");
     }
 
     private static MethodInfo? _invokeScriptBlockVoidMethod;
 
     private static MethodInfo InvokeScriptBlockVoidMethod
     {
-        get
-        {
-            if (_invokeScriptBlockVoidMethod is null)
-            {
-                _invokeScriptBlockVoidMethod = typeof(ScriptBlockInvokeContext).GetMethod(
-                    nameof(ScriptBlockInvokeContext.InvokeScriptBlockVoid),
-                    BindingFlags.NonPublic | BindingFlags.Instance)
-                    ?? throw new RuntimeException("Failed to get InvokeScriptBlockVoid method info.");
-            }
-
-            return _invokeScriptBlockVoidMethod;
-        }
+        get => _invokeScriptBlockVoidMethod ??= typeof(ScriptBlockInvokeContext).GetMethod(
+            nameof(ScriptBlockInvokeContext.InvokeScriptBlockVoid),
+            BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new RuntimeException("Failed to get InvokeScriptBlockVoid method info.");
     }
 
     private static MethodInfo? _invokeScriptBlockMethod;
 
     private static MethodInfo InvokeScriptBlockMethod
     {
-        get
-        {
-            if (_invokeScriptBlockMethod is null)
-            {
-                _invokeScriptBlockMethod = typeof(ScriptBlockInvokeContext).GetMethod(
-                    nameof(ScriptBlockInvokeContext.InvokeScriptBlock),
-                    BindingFlags.NonPublic | BindingFlags.Instance)
-                    ?? throw new RuntimeException("Failed to get InvokeScriptBlock method info.");
-            }
-
-            return _invokeScriptBlockMethod;
-        }
+        get => _invokeScriptBlockMethod ??= typeof(ScriptBlockInvokeContext).GetMethod(
+            nameof(ScriptBlockInvokeContext.InvokeScriptBlock),
+            BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new RuntimeException("Failed to get InvokeScriptBlock method info.");
     }
 
     private static ConstructorInfo? _object_Ctor;
 
     private static ConstructorInfo Object_Ctor
     {
-        get
-        {
-            if (_object_Ctor is null)
-            {
-                _object_Ctor = typeof(object).GetConstructor(
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null,
-                    [],
-                    null)
-                    ?? throw new RuntimeException("Failed to get object constructor method info.");
-            }
-
-            return _object_Ctor;
-        }
+        get => _object_Ctor ??= typeof(object).GetConstructor(
+            BindingFlags.Public | BindingFlags.Instance,
+            null,
+            [],
+            null)
+            ?? throw new RuntimeException("Failed to get object constructor method info.");
     }
 
     private static ConstructorInfo? _psReference_Ctor;
 
     private static ConstructorInfo PSReference_Ctor
     {
-        get
-        {
-            if (_psReference_Ctor is null)
-            {
-                _psReference_Ctor = typeof(PSReference).GetConstructor(
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null,
-                    [ typeof(object) ],
-                    null)
-                    ?? throw new RuntimeException("Failed to get PSReference constructor method info.");
-            }
-
-            return _psReference_Ctor;
-        }
+        get => _psReference_Ctor ??= typeof(PSReference).GetConstructor(
+            BindingFlags.Public | BindingFlags.Instance,
+            null,
+            [ typeof(object) ],
+            null)
+            ?? throw new RuntimeException("Failed to get PSReference constructor method info.");
     }
 
     private static MethodInfo? _psReference_GetValue;
 
     private static MethodInfo PSReference_GetValue
     {
-        get
-        {
-            if (_psReference_GetValue is null)
-            {
-                _psReference_GetValue = typeof(PSReference).GetMethod(
-                    "get_Value",
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null,
-                    [],
-                    null)
-                    ?? throw new RuntimeException("Failed to get PSReference.get_Value method info.");
-            }
-
-            return _psReference_GetValue;
-        }
-    }
-
-    private static MethodInfo? _psReference_SetValue;
-
-    private static MethodInfo PSReference_SetValue
-    {
-        get
-        {
-            if (_psReference_SetValue is null)
-            {
-                _psReference_SetValue = typeof(PSReference).GetMethod(
-                    "set_Value",
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null,
-                    [ typeof(object) ],
-                    null)
-                    ?? throw new RuntimeException("Failed to get PSReference.set_Value method info.");
-            }
-
-            return _psReference_SetValue;
-        }
+        get => _psReference_GetValue ??= typeof(PSReference).GetMethod(
+            "get_Value",
+            BindingFlags.Public | BindingFlags.Instance,
+            null,
+            [],
+            null)
+            ?? throw new RuntimeException("Failed to get PSReference.get_Value method info.");
     }
 
     private static MethodInfo? _languagePrimitives_ConvertTo;
 
     private static MethodInfo LanguagePrimitives_ConvertTo
     {
-        get
-        {
-            if (_languagePrimitives_ConvertTo is null)
-            {
-                _languagePrimitives_ConvertTo = typeof(LanguagePrimitives).GetMethod(
-                    "ConvertTo",
-                    BindingFlags.Public | BindingFlags.Static,
-                    null,
-                    [ typeof(object)  ],
-                    null)
-                    ?? throw new RuntimeException("Failed to get LanguagePrimitives.ConvertTo method info.");
-            }
-
-            return _languagePrimitives_ConvertTo;
-        }
+        get => _languagePrimitives_ConvertTo ??= typeof(LanguagePrimitives).GetMethod(
+            "ConvertTo",
+            BindingFlags.Public | BindingFlags.Static,
+            null,
+            [ typeof(object)  ],
+            null)
+            ?? throw new RuntimeException("Failed to get LanguagePrimitives.ConvertTo method info.");
     }
 
+    /// <summary>
+    /// Creates the required types and methods that can be used to detour and
+    /// call our InvokeScriptBlock methods for the provided method.
+    /// </summary>
+    /// <param name="methodToDetour">The method to create a detour for.</param>
+    /// <returns>A DetourInfo with the information needed to set up the detour invoke context.</returns>
     public static DetourInfo CreateDetour(
         MethodBase methodToDetour)
     {
