@@ -20,6 +20,7 @@ public sealed class NetDetourHook : IDisposable
     public void Dispose()
     {
         _hook.Dispose();
+        InvokeContext.Dispose();
         GC.SuppressFinalize(this);
     }
     ~NetDetourHook() => Dispose();

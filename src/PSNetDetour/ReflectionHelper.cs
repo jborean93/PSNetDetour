@@ -1,10 +1,44 @@
+using System;
 using System.Management.Automation;
+using System.Management.Automation.Language;
 using System.Reflection;
 
 namespace PSNetDetour;
 
 internal static class ReflectionHelper
 {
+    private static ConstructorInfo? _scriptBlock_Ctor_IParameterMetadataProvider;
+    private static Type? _iParameterMetadataProvider_Type;
+
+    public static ScriptBlock GetScriptBlockFromFunctionDefinitionAst(FunctionDefinitionAst fda)
+    {
+        // It is not possible to get the ScriptBlockAst from a
+        // FunctionDefinitionAst using public APIs. As we need the SBK AST to
+        // rebuild our ScriptBlocks with no Runspace affinity we have to use
+        // what PowerShell does internall.
+        // We cannot use fda.Body.GetScriptBlock() as it won't have the params
+        // or other metadata defined on the function itself.
+
+        if (_scriptBlock_Ctor_IParameterMetadataProvider is null)
+        {
+            if (_iParameterMetadataProvider_Type is null)
+            {
+                _iParameterMetadataProvider_Type = typeof(FunctionDefinitionAst).Assembly.GetType(
+                    "System.Management.Automation.Language.IParameterMetadataProvider")
+                    ?? throw new RuntimeException("Could not find IParameterMetadataProvider type via reflection.");
+            }
+
+            _scriptBlock_Ctor_IParameterMetadataProvider = typeof(ScriptBlock).GetConstructor(
+                BindingFlags.NonPublic | BindingFlags.Instance,
+                null,
+                [ _iParameterMetadataProvider_Type, typeof(bool) ],
+                null)
+                ?? throw new RuntimeException("Could not find ScriptBlock IParameterMetadataProvider constructor via reflection.");
+        }
+
+        return (ScriptBlock)_scriptBlock_Ctor_IParameterMetadataProvider.Invoke([ fda, fda.IsFilter ]);
+    }
+
     private static MethodInfo? _errorRecord_SetInvocationInfo;
 
     public static void ErrorRecord_SetInvocationInfo(ErrorRecord errorRecord, InvocationInfo invocationInfo)

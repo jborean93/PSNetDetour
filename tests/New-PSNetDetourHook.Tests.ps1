@@ -11,6 +11,7 @@ Describe "New-PSNetDetourHook" {
 
                 [PSNetDetour.Tests.TestClass]::StaticVoidCalled | Should -Be 0
                 $Detour.Instance | Should -BeNullOrEmpty
+                $Detour.State | Should -BeNullOrEmpty
                 $Detour.Invoke()
                 [PSNetDetour.Tests.TestClass]::StaticVoidCalled | Should -Be 1
             }
@@ -1049,8 +1050,285 @@ finally {
             $ps.Dispose()
         }
 
-        # TODO: Add tests for async
-        # TODO: Add tests for method invoked in another thread
+        It "Uses Function ScriptBlock a hook definition" {
+            $ErrorActionPreference = 'Stop'
+
+            Function source {
+                [PSNetDetour.Tests.TestClass]::StaticIntNoArgs()
+            }
+
+            Function hook {
+                100
+            }
+
+            $h = New-PSNetDetourHook -Source ${function:source} -Hook ${function:hook}
+            try {
+                [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() | Should -Be 100
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Strips the runspace affinity from the <SbkType>" -TestCases @(
+            @{ SbkType = 'Function' }
+            @{ SbkType = 'ScriptBlock' }
+        ) {
+            param ($SbkType)
+
+            $h = $null
+            $rs = [RunspaceFactory]::CreateRunspace()
+            try {
+                $rs.Open()
+
+                $ps = [PowerShell]::Create()
+                $ps.Runspace = $rs
+                $toRun = $ps.AddScript({
+                    $TestVar = 10
+
+                    if ($args[0] -eq 'Function') {
+                        function func { $TestVar }
+                        ${function:func}
+                    }
+                    else {
+                        { $TestVar }
+                    }
+
+                }).AddArgument($SbkType).Invoke()[0]
+                $ps.Dispose()
+
+                $h = New-PSNetDetourHook { [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() } -Hook $toRun
+
+                $TestVar = 20
+                [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() | Should -Be 20
+            }
+            finally {
+                $rs.Dispose()
+                if ($h) { $h.Dispose() }
+            }
+        }
+
+        It "Fails to hook method run in another thread on default runspace" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                throw "Should not be called"
+            }
+            try {
+                {
+                    [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                } | Should -Throw "*Hook for 'TestClass static Int32 StaticIntArgs(Int32 a)' is being invoked in a thread with no active Runspace. Create hook with -UseRunspace New or -UseRunspace Pool to invoke the hook in a separate Runspace or RunspacePool.*"
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks method run in another thread with new runspace managed by hook" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                [Runspace]::DefaultRunspace.Id
+            } -UseRunspace New
+            try {
+                $rid = [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                $rid | Should -Not -Be ([Runspace]::DefaultRunspace.Id)
+                Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+            }
+            finally {
+                $h.Dispose()
+            }
+
+            Get-Runspace -Id $rid | Should -BeNullOrEmpty
+        }
+
+        It "Hooks method run in another thread with new runspace managed by caller" {
+            $rs = [RunspaceFactory]::CreateRunspace()
+            try {
+                $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                    [Runspace]::DefaultRunspace.Id
+                } -UseRunspace $rs
+                try {
+                    $rs.Open()
+                    $rid = [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                    $rid | Should -Be $rs.Id
+                    Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+                }
+                finally {
+                    $h.Dispose()
+                }
+
+                Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+
+            }
+            finally {
+                $rs.Dispose()
+            }
+
+            Get-Runspace -Id $rid | Should -BeNullOrEmpty
+        }
+
+        It "Hooks method run in another thread with new runspace pool managed by hook" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                [Runspace]::DefaultRunspace.Id
+            } -UseRunspace Pool
+            try {
+                $rid = [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                $rid | Should -Not -Be ([Runspace]::DefaultRunspace.Id)
+                Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+            }
+            finally {
+                $h.Dispose()
+            }
+
+            Get-Runspace -Id $rid | Should -BeNullOrEmpty
+        }
+
+        It "Hooks method run in another thread with new runspace pool managed by caller" {
+            $rs = [RunspaceFactory]::CreateRunspacePool()
+            try {
+                $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                    [Runspace]::DefaultRunspace.Id
+                } -UseRunspace $rs
+                try {
+                    $rs.Open()
+                    $rid = [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                    $rid | Should -Not -Be ([Runspace]::DefaultRunspace.Id)
+                    Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+                }
+                finally {
+                    $h.Dispose()
+                }
+
+                Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+
+            }
+            finally {
+                $rs.Dispose()
+            }
+
+            Get-Runspace -Id $rid | Should -BeNullOrEmpty
+        }
+
+        It "Fails with invalid UseRunspace value" {
+            {
+                New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                    [Runspace]::DefaultRunspace.Id
+                } -UseRunspace Invalid
+            } | Should -Throw 'Invalid UseRunspace value ''Invalid''. Valid values are ''Current'', ''New'', ''Pool'', or a Runspace/RunspacePool instance.'
+        }
+
+        It "Invokes async Task that has not been awaited yet" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::RunTaskAsync([int]) } -Hook {
+                [System.Threading.Tasks.Task]::FromResult(100)
+            }
+            try {
+                [PSNetDetour.Tests.TestClass]::StaticVoidCalled = 0
+                $result = [PSNetDetour.Tests.TestClass]::RunTaskAsync(1).GetAwaiter().GetResult()
+                $result | Should -Be 100
+
+                # As our hook skipped invoking the original this should never be called
+                [PSNetDetour.Tests.TestClass]::StaticVoidCalled | Should -Be 0
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Invokes async Task that has been awaited" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::TaskAsync() } -Hook {
+                # The original method returns the ManagedThreadId + 1 but the
+                # ManagedThreadId will be in another thread so we check that it's
+                # not ours
+                $tid = [System.Threading.Thread]::CurrentThread.ManagedThreadId
+                $Detour.Invoke().GetAwaiter().GetResult() | Should -Not -Be ($tid + 1)
+
+                [System.Threading.Tasks.Task]::FromResult(-1)
+            } -UseRunspace New
+            try {
+                [PSNetDetour.Tests.TestClass]::StaticVoidCalled = 0
+                $result = [PSNetDetour.Tests.TestClass]::RunTaskAsync(1).GetAwaiter().GetResult()
+                $result | Should -Be 2
+
+                # Our hook returned -1 and not the ManagedThreadId that the original did.
+                [PSNetDetour.Tests.TestClass]::StaticVoidCalled | Should -Be -1
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Uses the -State object to pass data into the hook" {
+            $state = @{}
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                param ($arg1)
+
+                $state = $Detour.State
+                $state | Should -BeOfType 'System.Collections.Hashtable'
+                $state.Count | Should -Be 0
+                $state['Argument'] = $arg1
+                $state['Result'] = $Detour.Invoke($arg1)
+
+                100
+            } -State $state -UseRunspace New
+            try {
+                [PSNetDetour.Tests.TestClass]::StaticIntArgs(5) | Should -Be 100
+                $state.Argument | Should -Be 5
+                $state.Result | Should -Be 6
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Creates hook through alias" {
+            $modulePath = Join-Path (Get-Module -Name PSNetDetour).ModuleBase 'PSNetDetour.psm1'
+
+            # We use a string to avoid PSSA from expanding on save in the editor
+            $ps = [PowerShell]::Create()
+            $null = $ps.AddScript(@'
+                Import-Module $args[0]
+                # Ensure ALC setup doesn't break aliases on second import
+                Import-Module $args[0] -Force
+
+                $h = nethook -Source { [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() } -Hook { 200 }
+                try {
+                    [PSNetDetour.Tests.TestClass]::StaticIntNoArgs()
+                }
+                finally {
+                    $h.Dispose()
+                }
+'@).AddArgument($modulePath)
+            $ps.Invoke()[0] | Should -Be 200
+        }
+
+        It "Autocompletes -UseRunspace parameter" {
+            $actual = Complete 'New-PSNetDetourHook -UseRunspace '
+
+            $actual.Count | Should -Be 3
+            $actual[0].CompletionText | Should -Be 'Current'
+            $actual[0].ListItemText | Should -Be 'Current'
+            $actual[0].ToolTip | Should -Be 'Use the current Runspace for invoking the hook.'
+
+            $actual[1].CompletionText | Should -Be 'New'
+            $actual[1].ListItemText | Should -Be 'New'
+            $actual[1].ToolTip | Should -Be 'Create a new Runspace for invoking the hook.'
+
+            $actual[2].CompletionText | Should -Be 'Pool'
+            $actual[2].ListItemText | Should -Be 'Pool'
+            $actual[2].ToolTip | Should -Be 'Create a new RunspacePool for invoking the hook.'
+        }
+
+        It "Matches one autocomplete entry for -UseRunspace parameter" {
+            $actual = Complete 'New-PSNetDetourHook -UseRunspace C'
+
+            $actual.Count | Should -Be 1
+            $actual[0].CompletionText | Should -Be 'Current'
+            $actual[0].ListItemText | Should -Be 'Current'
+            $actual[0].ToolTip | Should -Be 'Use the current Runspace for invoking the hook.'
+        }
+
+        It "Matches no autocomplete entries for -UseRunspace parameter" {
+            $actual = Complete 'New-PSNetDetourHook -UseRunspace X'
+
+            $actual.Count | Should -Be 0
+        }
     }
 
     Context "Invalid ScriptBlock Targets" {

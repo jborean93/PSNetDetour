@@ -12,6 +12,21 @@ if (-not (Get-Variable IsWindows -ErrorAction SilentlyContinue)) {
     Set-Variable -Name IsWindows -Value $true -Scope Global
 }
 
+Function Global:Complete {
+    [OutputType([System.Management.Automation.CompletionResult])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [string]
+        $Expression
+    )
+
+    [System.Management.Automation.CommandCompletion]::CompleteInput(
+        $Expression,
+        $Expression.Length,
+        $null).CompletionMatches
+}
+
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections;
@@ -22,6 +37,8 @@ using System.Management.Automation;
 using System.Management.Automation.Host;
 using System.Management.Automation.Runspaces;
 using System.Security;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace PSNetDetour.Tests
 {
@@ -205,6 +222,24 @@ namespace PSNetDetour.Tests
             }
 
             return count;
+        }
+
+        public static int RunInAnotherThread()
+        {
+            return Task.Run(() => TaskAsync()).GetAwaiter().GetResult();
+        }
+
+        public static async Task<int> TaskAsync()
+        {
+            await Task.Delay(1);
+            return StaticIntArgs(Thread.CurrentThread.ManagedThreadId);
+        }
+
+        public static async Task<int> RunTaskAsync(int input)
+        {
+            await Task.Delay(1);
+            TestClass.StaticVoidCalled = await TaskAsync();
+            return input + 1;
         }
     }
 

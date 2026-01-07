@@ -44,9 +44,14 @@ if ($innerMod) {
     # https://github.com/PowerShell/PowerShell/issues/20710
     $addExportedCmdlet = [PSModuleInfo].GetMethod(
         'AddExportedCmdlet',
-        [BindingFlags]'Instance, NonPublic'
-    )
+        [BindingFlags]'Instance, NonPublic')
+    $addExportedAlias = [PSModuleInfo].GetMethod(
+        'AddExportedAlias',
+        [BindingFlags]'Instance, NonPublic')
     foreach ($cmd in $innerMod.ExportedCmdlets.Values) {
         $addExportedCmdlet.Invoke($ExecutionContext.SessionState.Module, @(, $cmd))
+    }
+    foreach ($alias in $innerMod.ExportedAliases.Values) {
+        $addExportedAlias.Invoke($ExecutionContext.SessionState.Module, @(, $alias))
     }
 }
