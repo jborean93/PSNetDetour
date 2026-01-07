@@ -242,6 +242,11 @@ namespace PSNetDetour.Tests
             TestClass.StaticVoidCalled = await TaskAsync();
             return input + 1;
         }
+
+        public static object StaticReturnAnything()
+        {
+            return null;
+        }
     }
 
     public class BaseClass

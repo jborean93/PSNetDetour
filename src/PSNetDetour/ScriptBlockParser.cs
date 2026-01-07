@@ -1,13 +1,26 @@
 using System;
+using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Management.Automation;
 using System.Management.Automation.Language;
 using System.Reflection;
+using System.Text;
 
 namespace PSNetDetour;
 
 internal static class ScriptBlockParser
 {
+    private class DefaultVariableValue
+    {
+        private static DefaultVariableValue? _instance;
+
+        private DefaultVariableValue()
+        { }
+
+        public static DefaultVariableValue Value => _instance ??= new();
+    }
+
     /// <summary>
     /// Parses a ScriptBlockAst to extract the MethodBase it represents.
     /// </summary>
@@ -236,6 +249,139 @@ internal static class ScriptBlockParser
         }
 
         return foundMethod;
+    }
+
+    /// <summary>
+    /// Tries to extracts all $using: variables from a ScriptBlockAst and
+    /// stores their values in the usingParams hashtable our parameter.
+    /// </summary>
+    /// <param name="cmdlet">The PSCmdlet to use for retrieving variable values or write errors.</param>
+    /// <param name="ast">The ScriptBlockAst to extract $using variables from.</param>
+    /// <param name="usingParams">A Hashtable containing all the using variables found.</param>
+    /// <returns>True if the using variables were successfully extracted; otherwise, false.</returns>
+    /// <remarks>
+    /// If this method fails to extract a using variable it will write an error
+    /// using the cmdlet provided.
+    /// </remarks>
+    public static bool TryGetUsingParameters(
+        PSCmdlet cmdlet,
+        ScriptBlockAst ast,
+        [NotNullWhen(true)] out Hashtable? usingParams)
+    {
+        usingParams = new();
+
+        bool successful = true;
+        foreach (Ast? usingStatement in ast.FindAll((a) => a is UsingExpressionAst, true))
+        {
+            UsingExpressionAst usingAst = (UsingExpressionAst)usingStatement;
+            VariableExpressionAst backingVariableAst = UsingExpressionAst.ExtractUsingVariable(usingAst);
+            string varPath = backingVariableAst.VariablePath.UserPath;
+
+            // The non-index $using variable ensures the key is lowercased.
+            // The index variant is not in case the index itself is a string
+            // as that could be case sensitive.
+            string varText = usingAst.ToString();
+            if (usingAst.SubExpression is VariableExpressionAst)
+            {
+                varText = varText.ToLowerInvariant();
+            }
+            string key = Convert.ToBase64String(Encoding.Unicode.GetBytes(varText));
+
+            if (!usingParams.ContainsKey(key))
+            {
+                object? value = cmdlet.SessionState.PSVariable.GetValue(varPath, DefaultVariableValue.Value);
+                if (value is DefaultVariableValue)
+                {
+                    string msg = $"The value of the using variable '{usingStatement}' cannot be retrieved because it has not been set in the local session.";
+                    ErrorRecord err = new(
+                        new ArgumentException(msg),
+                        "UsingVariableIsUndefined",
+                        ErrorCategory.InvalidArgument,
+                        varPath);
+                    cmdlet.WriteError(err);
+                    successful = false;
+                    continue;
+                }
+
+                value = ExtractUsingExpressionValue(value, usingAst.SubExpression);
+
+                usingParams.Add(key, value);
+            }
+        }
+
+        return successful;
+    }
+
+    private static object? ExtractUsingExpressionValue(
+        object? value,
+        ExpressionAst ast)
+    {
+        if (ast is not MemberExpressionAst && ast is not IndexExpressionAst)
+        {
+            // No need to extract the inner value for simple $using:var entries.
+            return value;
+        }
+
+        // We need to replace the inner VariableExpressionAst that the
+        // member/index expressions are pulling from with the constant value.
+        VariableExpressionAst usingVariable = (VariableExpressionAst)ast.Find(a => a is VariableExpressionAst, false);
+
+        // We go up the hierarchy replacing the index and member expressions
+        // with the new constant value/the newly wrapped AST expressions.
+        ExpressionAst lookupAst = new ConstantExpressionAst(ast.Extent, value);
+        ExpressionAst currentAst = usingVariable;
+        while (true)
+        {
+            if (currentAst.Parent is IndexExpressionAst indexAst)
+            {
+                lookupAst = new IndexExpressionAst(
+                    indexAst.Extent,
+                    lookupAst,
+                    (ExpressionAst)indexAst.Index.Copy()
+#if NET8_0_OR_GREATER
+                    , indexAst.NullConditional
+#endif
+                );
+                currentAst = indexAst;
+            }
+            else if (currentAst.Parent is MemberExpressionAst memberAst)
+            {
+                lookupAst = new MemberExpressionAst(
+                    memberAst.Extent,
+                    lookupAst,
+                    (ExpressionAst)memberAst.Member.Copy(),
+                    memberAst.Static
+#if NET8_0_OR_GREATER
+                    , memberAst.NullConditional
+#endif
+                );
+                currentAst = memberAst;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        // With the new ScriptBlock we can just run it to get the final value.
+        ScriptBlock extractionScriptBlock = new ScriptBlockAst(
+            ast.Extent,
+            null,
+            new StatementBlockAst(
+                ast.Extent,
+                [
+                    new PipelineAst(
+                        ast.Extent,
+                        [
+                            new CommandExpressionAst(
+                                ast.Extent,
+                                lookupAst,
+                                null)
+                        ])
+                ],
+                null),
+            false).GetScriptBlock();
+        return extractionScriptBlock.Invoke().FirstOrDefault();
     }
 
     private static Type ResolveType(ITypeName typeName)

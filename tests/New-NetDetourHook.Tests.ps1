@@ -1366,6 +1366,250 @@ finally {
         }
     }
 
+    Describe '$using: tests' {
+        It "Passes along simple var with Runspace <UseRunspace>" -TestCases @(
+            @{ UseRunspace = 'Current' }
+            @{ UseRunspace = 'New' }
+            @{ UseRunspace = 'Pool' }
+        ) {
+            param ($UseRunspace)
+
+            $var = 'foo'
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $using:var
+            } -UseRunspace $UseRunspace
+
+            try {
+                # Using variables are captured on definition so changing it here
+                # won't affect the value seen in the hook
+                $var = 'changed'
+
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+                $actual | Should -Be 'foo'
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Passes along simple var with different case" {
+            $vaR = 'foo'
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $using:Var
+            }
+
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+                $actual | Should -Be 'foo'
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Passes along complex var" {
+            $var = [PSCustomObject]@{
+                Foo = 1
+                Bar = 'string'
+            }
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $res = $using:var
+
+                , @(
+                    $res.Foo.GetType().FullName
+                    $res.Foo
+                    $res.Bar.GetType().FullName
+                    $res.Bar
+                )
+            }
+
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+
+                $actual.Count | Should -Be 4
+                $actual[0] | Should -Be System.Int32
+                $actual[1] | Should -Be 1
+                $actual[2] | Should -Be System.String
+                $actual[3] | Should -Be string
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Passes ScriptBlock with UseRunspace <UseRunspace>" -TestCases @(
+            @{ UseRunspace = 'Current' }
+            @{ UseRunspace = 'New' }
+        ) {
+            param ($UseRunspace)
+
+            $sbkVar = 'outer'
+            $var = { $sbkVar }
+
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $res = $using:var
+
+                $sbkVar = 'inner'
+
+                , @(
+                    $res.GetType().FullName
+                    $res
+                    # It's dangerous to invoke a ScriptBlock from another Runspace
+                    # so we strip the affinity and invoke it here.
+                    & $res.Ast.GetScriptBlock()
+                )
+            } -UseRunspace $UseRunspace
+
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+
+                $actual.Count | Should -Be 3
+                $actual[0] | Should -Be System.Management.Automation.ScriptBlock
+                $actual[1] | Should -Be ' $sbkVar '
+                $actual[2] | Should -Be 'inner'
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Passes with index lookup as integer" {
+            $var = @('foo', 'bar')
+
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $using:var[1]
+            }
+
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+                $actual | Should -Be bar
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Passes with index lookup as single quoted string" {
+            $var = @{
+                foo = 1
+                bar = 2
+            }
+
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $using:var['bar']
+            }
+
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+                $actual | Should -Be 2
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Passes with index lookup as double quoted string" {
+            $var = @{
+                foo = 1
+                bar = 2
+            }
+
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $using:var["bar"]
+            }
+
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+                $actual | Should -Be 2
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Passes with index lookup with constant variable" {
+            $var = @('foo', 'bar')
+
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $using:var[$true]
+            }
+
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+                $actual | Should -Be bar
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Uses null for invalid index" {
+            $var = @('foo')
+
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $using:var[1]
+            }
+
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+                $actual | Should -BeNullOrEmpty
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Passes with index and member lookup" {
+            $var = @{
+                'Prop With Space' = @(
+                    @{ Foo = 'value 1' }
+                    @{ Foo = 'value 2' }
+                )
+            }
+
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                , @(
+                    $using:var.'Prop With Space'[0]['Foo']
+                    $using:var["Prop With Space"][1].Foo
+                )
+            }
+
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticReturnAnything()
+                $actual.Count | Should -Be 2
+                $actual[0] | Should -Be 'value 1'
+                $actual[1] | Should -Be 'value 2'
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Fails if variable not defined locally" {
+            {
+                New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook { $using:UndefinedVar } -ErrorAction Stop
+            } | Should -Throw 'The value of the using variable ''$using:UndefinedVar'' cannot be retrieved because it has not been set in the local session.'
+        }
+
+        It "Emits multiple error records if multiple undefined variables used" {
+            $err = @()
+            New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook {
+                $using:UndefinedVar1
+                $using:UndefinedVar2
+            } -ErrorAction SilentlyContinue -ErrorVariable err
+
+            $err.Count | Should -Be 2
+            [string]$err[0] | Should -Be 'The value of the using variable ''$using:UndefinedVar1'' cannot be retrieved because it has not been set in the local session.'
+            [string]$err[1] | Should -Be 'The value of the using variable ''$using:UndefinedVar2'' cannot be retrieved because it has not been set in the local session.'
+        }
+
+        It "Fails if variable with index lookup not defined locally" {
+            {
+                New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticReturnAnything() } -Hook { $using:UndefinedVar["index"] } -ErrorAction Stop
+            } | Should -Throw 'The value of the using variable ''$using:UndefinedVar`["index"`]'' cannot be retrieved because it has not been set in the local session.'
+        }
+    }
+
     Context "Invalid ScriptBlock Targets" {
         It "Has params" {
             {
