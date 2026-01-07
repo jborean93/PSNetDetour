@@ -15,18 +15,15 @@ internal static class ReflectionHelper
         // It is not possible to get the ScriptBlockAst from a
         // FunctionDefinitionAst using public APIs. As we need the SBK AST to
         // rebuild our ScriptBlocks with no Runspace affinity we have to use
-        // what PowerShell does internall.
+        // what PowerShell does internally.
         // We cannot use fda.Body.GetScriptBlock() as it won't have the params
         // or other metadata defined on the function itself.
 
         if (_scriptBlock_Ctor_IParameterMetadataProvider is null)
         {
-            if (_iParameterMetadataProvider_Type is null)
-            {
-                _iParameterMetadataProvider_Type = typeof(FunctionDefinitionAst).Assembly.GetType(
-                    "System.Management.Automation.Language.IParameterMetadataProvider")
-                    ?? throw new RuntimeException("Could not find IParameterMetadataProvider type via reflection.");
-            }
+            _iParameterMetadataProvider_Type ??= typeof(FunctionDefinitionAst).Assembly.GetType(
+                "System.Management.Automation.Language.IParameterMetadataProvider")
+                ?? throw new RuntimeException("Could not find IParameterMetadataProvider type via reflection.");
 
             _scriptBlock_Ctor_IParameterMetadataProvider = typeof(ScriptBlock).GetConstructor(
                 BindingFlags.NonPublic | BindingFlags.Instance,
@@ -43,16 +40,13 @@ internal static class ReflectionHelper
 
     public static void ErrorRecord_SetInvocationInfo(ErrorRecord errorRecord, InvocationInfo invocationInfo)
     {
-        if (_errorRecord_SetInvocationInfo is null)
-        {
-            _errorRecord_SetInvocationInfo = typeof(ErrorRecord).GetMethod(
-                "SetInvocationInfo",
-                BindingFlags.NonPublic | BindingFlags.Instance,
-                null,
-                [typeof(InvocationInfo)],
-                null)
-                ?? throw new RuntimeException("Could not find ErrorRecord.SetInvocationInfo method via reflection.");
-        }
+        _errorRecord_SetInvocationInfo ??= typeof(ErrorRecord).GetMethod(
+            "SetInvocationInfo",
+            BindingFlags.NonPublic | BindingFlags.Instance,
+            null,
+            [typeof(InvocationInfo)],
+            null)
+            ?? throw new RuntimeException("Could not find ErrorRecord.SetInvocationInfo method via reflection.");
 
         _errorRecord_SetInvocationInfo.Invoke(errorRecord, [ invocationInfo ]);
     }
@@ -61,13 +55,10 @@ internal static class ReflectionHelper
 
     public static void ErrorRecord_SetPreserveInvocationInfoOnce(ErrorRecord errorRecord, bool value)
     {
-        if (_errorRecord_PreserveInvocationInfoOnce is null)
-        {
-            _errorRecord_PreserveInvocationInfoOnce = typeof(ErrorRecord).GetProperty(
-                "PreserveInvocationInfoOnce",
-                BindingFlags.NonPublic | BindingFlags.Instance)
-                ?? throw new RuntimeException("Could not find ErrorRecord.PreserveInvocationInfoOnce property via reflection.");
-        }
+        _errorRecord_PreserveInvocationInfoOnce ??= typeof(ErrorRecord).GetProperty(
+            "PreserveInvocationInfoOnce",
+            BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new RuntimeException("Could not find ErrorRecord.PreserveInvocationInfoOnce property via reflection.");
 
         _errorRecord_PreserveInvocationInfoOnce.SetValue(errorRecord, value);
     }

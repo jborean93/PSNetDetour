@@ -4,8 +4,8 @@ using System.Management.Automation;
 
 namespace PSNetDetour.Commands;
 
-[Cmdlet(VerbsOther.Use, "PSNetDetourContext")]
-public sealed class UsePSNetDetourContext : PSCmdlet
+[Cmdlet(VerbsOther.Use, "NetDetourContext")]
+public sealed class UseNetDetourContext : PSCmdlet
 {
     [Parameter(
         Mandatory = true,
@@ -68,15 +68,15 @@ public sealed class UsePSNetDetourContext : PSCmdlet
             }
             foreach (VerboseRecord verbose in ps.Streams.Verbose)
             {
-                WriteVerbose(verbose.ToString() ?? string.Empty);
+                WriteVerbose(verbose.Message);
             }
             foreach (DebugRecord debug in ps.Streams.Debug)
             {
-                WriteDebug(debug.ToString() ?? string.Empty);
+                WriteDebug(debug.Message);
             }
             foreach (WarningRecord warning in ps.Streams.Warning)
             {
-                WriteWarning(warning.ToString() ?? string.Empty);
+                WriteWarning(warning.Message);
             }
             foreach(ProgressRecord progress in ps.Streams.Progress)
             {

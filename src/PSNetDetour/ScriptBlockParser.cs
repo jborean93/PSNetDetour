@@ -8,6 +8,13 @@ namespace PSNetDetour;
 
 internal static class ScriptBlockParser
 {
+    /// <summary>
+    /// Parses a ScriptBlockAst to extract the MethodBase it represents.
+    /// </summary>
+    /// <param name="ast">The ScriptBlockAst to parse.</param>
+    /// <param name="findNonPublic">Whether to find non-public methods.</param>
+    /// <param name="ignoreConstructorNew">Whether to ignore constructor new and find a static method called new instead.</param>
+    /// <returns>The MethodBase represented by the ScriptBlockAst.</returns>
     public static MethodBase ParseScriptBlockMethod(
         ScriptBlockAst ast,
         bool findNonPublic,

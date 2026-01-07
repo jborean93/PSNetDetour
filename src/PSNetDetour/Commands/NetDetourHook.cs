@@ -12,10 +12,10 @@ namespace PSNetDetour.Commands;
 [Alias("nethook")]
 [Cmdlet(
     VerbsCommon.New,
-    "PSNetDetourHook",
+    "NetDetourHook",
     DefaultParameterSetName = "Source")]
 [OutputType(typeof(NetDetourHook))]
-public sealed class NewPSNetDetourHook : PSCmdlet
+public sealed class NewNetDetourHook : PSCmdlet
 {
     [Parameter(
         Mandatory = true,
