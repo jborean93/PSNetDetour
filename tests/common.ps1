@@ -22,6 +22,8 @@ using System.Management.Automation;
 using System.Management.Automation.Host;
 using System.Management.Automation.Runspaces;
 using System.Security;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace PSNetDetour.Tests
 {
@@ -205,6 +207,17 @@ namespace PSNetDetour.Tests
             }
 
             return count;
+        }
+
+        public static int RunInAnotherThread()
+        {
+            return Task.Run(TaskAsync).GetAwaiter().GetResult();
+        }
+
+        public static async Task<int> TaskAsync()
+        {
+            await Task.Delay(1);
+            return StaticIntArgs(Thread.CurrentThread.ManagedThreadId);
         }
     }
 

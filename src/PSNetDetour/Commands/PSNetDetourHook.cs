@@ -3,6 +3,7 @@ using System.Collections;
 using System.Diagnostics;
 using System.Management.Automation;
 using System.Management.Automation.Language;
+using System.Management.Automation.Runspaces;
 using System.Reflection;
 using MonoMod.RuntimeDetour;
 
@@ -42,30 +43,83 @@ public sealed class NewPSNetDetourHook : PSCmdlet
     [Parameter]
     public SwitchParameter IgnoreConstructorNew { get; set; }
 
-    // UseNewRunspace
+    [Parameter]
+    public UseRunspaceValue? UseRunspace { get; set; }
+
     // UsingVariables
 
     protected override void EndProcessing()
     {
         Debug.Assert(Hook is not null);
 
-        MethodBase sourceMethod;
-        if (ParameterSetName == "Method")
+        Runspace? hookRunspace = null;
+        RunspacePool? hookRunspacePool = null;
+        bool disposeRunspace = false;
+
+        try
         {
-            Debug.Assert(Method is not null);
-            sourceMethod = Method!;
-        }
-        else
-        {
-            Debug.Assert(Source is not null);
-            if (Source?.Ast is ScriptBlockAst sourceAst)
+            if (UseRunspace?.Runspace is not null)
             {
+                hookRunspace = UseRunspace.Runspace;
+            }
+            else if (UseRunspace?.RunspacePool is not null)
+            {
+                hookRunspacePool = UseRunspace.RunspacePool;
+            }
+            else if (UseRunspace?.FreeForm is not null)
+            {
+                string value = UseRunspace.FreeForm.ToUpperInvariant();
+                if (value == "NEW")
+                {
+                    disposeRunspace = true;
+                    hookRunspace = RunspaceFactory.CreateRunspace();
+                    hookRunspace.Open();
+                }
+                else if (value == "POOL")
+                {
+                    disposeRunspace = true;
+                    hookRunspacePool = RunspaceFactory.CreateRunspacePool();
+                    hookRunspacePool.Open();
+                }
+                else if (value != "CURRENT")
+                {
+                    ErrorRecord error = new(
+                        new ArgumentException(
+                            $"Invalid UseRunspace value '{UseRunspace.FreeForm}'. Valid values " +
+                            "are 'Current', 'New', 'Pool', or a Runspace/RunspacePool instance."),
+                        "InvalidUseRunspaceValue",
+                        ErrorCategory.InvalidArgument,
+                        UseRunspace.FreeForm
+                    );
+                    ThrowTerminatingError(error);
+                    return;
+                }
+            }
+
+            MethodBase sourceMethod;
+            if (ParameterSetName == "Method")
+            {
+                Debug.Assert(Method is not null);
+                sourceMethod = Method!;
+            }
+            else
+            {
+                Debug.Assert(Source is not null);
+
                 try
                 {
-                    sourceMethod = ScriptBlockParser.ParseScriptBlockMethod(
-                        sourceAst,
-                        FindNonPublic.IsPresent,
-                        IgnoreConstructorNew.IsPresent);
+                    sourceMethod = Source.Ast switch
+                    {
+                        ScriptBlockAst sba => ScriptBlockParser.ParseScriptBlockMethod(
+                            sba,
+                            FindNonPublic.IsPresent,
+                            IgnoreConstructorNew.IsPresent),
+                        FunctionDefinitionAst fda => ScriptBlockParser.ParseScriptBlockMethod(
+                            fda.Body,
+                            FindNonPublic.IsPresent,
+                            IgnoreConstructorNew.IsPresent),
+                        _ => throw new RuntimeException($"Unexpected Ast type from ScriptBlock {Source.Ast.GetType().Name}.")
+                    };
                 }
                 catch (ParseException e)
                 {
@@ -90,35 +144,45 @@ public sealed class NewPSNetDetourHook : PSCmdlet
                     return;
                 }
             }
-            else
+
+            if (sourceMethod.IsGenericMethod || sourceMethod.DeclaringType is { IsGenericType: true })
             {
                 ThrowTerminatingError(
                     new ErrorRecord(
-                        new ArgumentException("Source ScriptBlock Ast is not in the expected format."),
-                        "SourceInvalidAst",
-                        ErrorCategory.InvalidArgument,
-                        Source));
+                        new NotSupportedException("Detouring generic methods or methods on generic types is not supported."),
+                        "GenericMethodsNotSupported",
+                        ErrorCategory.NotImplemented,
+                        sourceMethod));
                 return;
             }
-        }
 
-        if (sourceMethod.IsGenericMethod || sourceMethod.DeclaringType is { IsGenericType: true })
+            string sourceSignature = MethodSignature.GetOverloadDefinition(sourceMethod);
+            DetourInfo detourInfo = DetourInfo.CreateDetour(
+                sourceMethod);
+
+            ScriptBlockInvokeContext invokeContext = new(
+                sourceSignature,
+                sourceMethod,
+                detourInfo.DetourMetaType,
+                Hook, MyInvocation,
+                hookRunspace,
+                hookRunspacePool,
+                disposeRunspace);
+            Hook detourHook = new(
+                sourceMethod,
+                detourInfo.DetourTarget,
+                invokeContext);
+
+            WriteObject(new NetDetourHook(detourHook, invokeContext));
+        }
+        catch
         {
-            ThrowTerminatingError(
-                new ErrorRecord(
-                    new NotSupportedException("Detouring generic methods or methods on generic types is not supported."),
-                    "GenericMethodsNotSupported",
-                    ErrorCategory.NotImplemented,
-                    sourceMethod));
-            return;
+            if (disposeRunspace)
+            {
+                hookRunspace?.Dispose();
+                hookRunspacePool?.Dispose();
+            }
+            throw;
         }
-
-        DetourInfo detourInfo = DetourInfo.CreateDetour(
-            sourceMethod);
-
-        ScriptBlockInvokeContext invokeContext = new(sourceMethod, detourInfo.DetourMetaType, Hook, MyInvocation);
-        Hook detourHook = new(sourceMethod, detourInfo.DetourTarget, invokeContext);
-
-        WriteObject(new NetDetourHook(detourHook, invokeContext));
     }
 }

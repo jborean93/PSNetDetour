@@ -1049,8 +1049,171 @@ finally {
             $ps.Dispose()
         }
 
+        It "Uses Function ScriptBlock a hook definition" {
+            $ErrorActionPreference = 'Stop'
+
+            Function source {
+                [PSNetDetour.Tests.TestClass]::StaticIntNoArgs()
+            }
+
+            Function hook {
+                100
+            }
+
+            $h = New-PSNetDetourHook -Source ${function:source} -Hook ${function:hook}
+            try {
+                [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() | Should -Be 100
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Strips the runspace affinity from the <SbkType>" -TestCases @(
+            @{ SbkType = 'Function' }
+            @{ SbkType = 'ScriptBlock' }
+        ) {
+            param ($SbkType)
+
+            $h = $null
+            $rs = [RunspaceFactory]::CreateRunspace()
+            try {
+                $rs.Open()
+
+                $ps = [PowerShell]::Create()
+                $ps.Runspace = $rs
+                $toRun = $ps.AddScript({
+                    $TestVar = 10
+
+                    if ($args[0] -eq 'Function') {
+                        function func { $TestVar }
+                        ${function:func}
+                    }
+                    else {
+                        { $TestVar }
+                    }
+
+                }).AddArgument($SbkType).Invoke()[0]
+                $ps.Dispose()
+
+                $h = New-PSNetDetourHook { [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() } -Hook $toRun
+
+                $TestVar = 20
+                [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() | Should -Be 20
+            }
+            finally {
+                $rs.Dispose()
+                if ($h) { $h.Dispose() }
+            }
+        }
+
+        It "Fails to hook method run in another thread on default runspace" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                throw "Should not be called"
+            }
+            try {
+                {
+                    [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                } | Should -Throw "*Hook for 'TestClass static Int32 StaticIntArgs(Int32 a)' is being invoked in a thread with no active Runspace. Create hook with -UseRunspace New or -UseRunspace Pool to invoke the hook in a separate Runspace or RunspacePool.*"
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks method run in another thread with new runspace managed by hook" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                [Runspace]::DefaultRunspace.Id
+            } -UseRunspace New
+            try {
+                $rid = [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                $rid | Should -Not -Be ([Runspace]::DefaultRunspace.Id)
+                Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+            }
+            finally {
+                $h.Dispose()
+            }
+
+            Get-Runspace -Id $rid | Should -BeNullOrEmpty
+        }
+
+        It "Hooks method run in another thread with new runspace managed by caller" {
+            $rs = [RunspaceFactory]::CreateRunspace()
+            try {
+                $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                    [Runspace]::DefaultRunspace.Id
+                } -UseRunspace $rs
+                try {
+                    $rs.Open()
+                    $rid = [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                    $rid | Should -Be $rs.Id
+                    Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+                }
+                finally {
+                    $h.Dispose()
+                }
+
+                Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+
+            }
+            finally {
+                $rs.Dispose()
+            }
+
+            Get-Runspace -Id $rid | Should -BeNullOrEmpty
+        }
+
+        It "Hooks method run in another thread with new runspace pool managed by hook" {
+            $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                [Runspace]::DefaultRunspace.Id
+            } -UseRunspace Pool
+            try {
+                $rid = [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                $rid | Should -Not -Be ([Runspace]::DefaultRunspace.Id)
+                Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+            }
+            finally {
+                $h.Dispose()
+            }
+
+            Get-Runspace -Id $rid | Should -BeNullOrEmpty
+        }
+
+        It "Hooks method run in another thread with new runspace pool managed by caller" {
+            $rs = [RunspaceFactory]::CreateRunspacePool()
+            try {
+                $h = New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                    [Runspace]::DefaultRunspace.Id
+                } -UseRunspace $rs
+                try {
+                    $rs.Open()
+                    $rid = [PSNetDetour.Tests.TestClass]::RunInAnotherThread()
+                    $rid | Should -Not -Be ([Runspace]::DefaultRunspace.Id)
+                    Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+                }
+                finally {
+                    $h.Dispose()
+                }
+
+                Get-Runspace -Id $rid | Should -Not -BeNullOrEmpty
+
+            }
+            finally {
+                $rs.Dispose()
+            }
+
+            Get-Runspace -Id $rid | Should -BeNullOrEmpty
+        }
+
+        It "Fails with invalid UseRunspace value" {
+            {
+                New-PSNetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntArgs([int]) } -Hook {
+                    [Runspace]::DefaultRunspace.Id
+                } -UseRunspace Invalid
+            } | Should -Throw 'Invalid UseRunspace value ''Invalid''. Valid values are ''Current'', ''New'', ''Pool'', or a Runspace/RunspacePool instance.'
+        }
+
         # TODO: Add tests for async
-        # TODO: Add tests for method invoked in another thread
     }
 
     Context "Invalid ScriptBlock Targets" {

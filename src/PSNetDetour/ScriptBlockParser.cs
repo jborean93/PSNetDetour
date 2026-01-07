@@ -3,7 +3,6 @@ using System.Linq;
 using System.Management.Automation;
 using System.Management.Automation.Language;
 using System.Reflection;
-using System.Text;
 
 namespace PSNetDetour;
 
@@ -216,7 +215,7 @@ internal static class ScriptBlockParser
 
         if (foundMethod is null)
         {
-            string overload = GetOverloadDefinition(
+            string overload = MethodSignature.GetOverloadDefinition(
                 methodType,
                 methodName,
                 parameterTypes,
@@ -230,46 +229,6 @@ internal static class ScriptBlockParser
         }
 
         return foundMethod;
-    }
-
-    private static string GetOverloadDefinition(
-        Type methodType,
-        string methodName,
-        Type[] parameterTypes,
-        bool isStatic,
-        bool isConstructor)
-    {
-        StringBuilder overload = new();
-
-        if (isConstructor)
-        {
-            overload.AppendFormat("new {0}", methodType.Name);
-        }
-        else
-        {
-            overload.AppendFormat("{0} ", methodType.Name);
-
-            if (isStatic)
-            {
-                overload.Append("static ");
-            }
-
-            overload.AppendFormat("ReturnType {0}", methodName);
-        }
-
-        overload.Append('(');
-        for (int i = 0; i < parameterTypes.Length; i++)
-        {
-            Type paramType = parameterTypes[i];
-            overload.AppendFormat("{0} arg{1}", paramType.Name, i);
-            if (i < parameterTypes.Length - 1)
-            {
-                overload.Append(", ");
-            }
-        }
-        overload.Append(')');
-
-        return overload.ToString();
     }
 
     private static Type ResolveType(ITypeName typeName)
