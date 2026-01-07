@@ -120,7 +120,7 @@ public sealed class NewNetDetourHook : PSCmdlet
                             fda.Body,
                             FindNonPublic.IsPresent,
                             IgnoreConstructorNew.IsPresent),
-                        _ => throw new RuntimeException($"Unexpected Ast type from ScriptBlock {Source.Ast.GetType().Name}.")
+                        _ => throw new RuntimeException($"Unexpected Ast type from Source ScriptBlock {Source.Ast.GetType().Name}.")
                     };
                 }
                 catch (ParseException e)
@@ -158,6 +158,18 @@ public sealed class NewNetDetourHook : PSCmdlet
                 return;
             }
 
+            ScriptBlockAst hookAst = Hook.Ast switch
+            {
+                ScriptBlockAst sba => sba,
+                FunctionDefinitionAst fda => fda.Body,
+                _ => throw new RuntimeException($"Unexpected Ast type from Hook ScriptBlock {Hook.Ast.GetType().Name}.")
+            };
+            if (!ScriptBlockParser.TryGetUsingParameters(this, hookAst, out Hashtable? usingVars))
+            {
+                // TryGetUsingParameters already writes errors.
+                return;
+            }
+
             string sourceSignature = MethodSignature.GetOverloadDefinition(sourceMethod);
             DetourInfo detourInfo = DetourInfo.CreateDetour(
                 sourceMethod);
@@ -169,6 +181,7 @@ public sealed class NewNetDetourHook : PSCmdlet
                 Hook,
                 MyInvocation,
                 State,
+                usingVars,
                 hookRunspace,
                 hookRunspacePool,
                 disposeRunspace);

@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Management.Automation;
@@ -14,6 +15,7 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
     private readonly Type _detourMetaType;
     private readonly InvocationInfo _myInvocation;
     private readonly ScriptBlock _scriptBlock;
+    private readonly Hashtable _usingVars;
     private readonly Runspace? _runspace;
     private readonly RunspacePool? _runspacePool;
     private readonly bool _disposeRunspace;
@@ -28,6 +30,7 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         ScriptBlock scriptBlock,
         InvocationInfo myInvocation,
         object? state,
+        Hashtable usingVars,
         Runspace? runspace,
         RunspacePool? runspacePool,
         bool disposeRunspace)
@@ -37,6 +40,7 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         _detourMetaType = detourMetaType;
         _myInvocation = myInvocation;
         _scriptBlock = scriptBlock;
+        _usingVars = usingVars;
         _runspace = runspace;
         _runspacePool = runspacePool;
         _disposeRunspace = disposeRunspace;
@@ -119,6 +123,11 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
             .AddArgument(args)
             .AddArgument((object)ScriptBlockHelper.StripScriptBlockAffinity)
             .AddArgument(_scriptBlock);
+
+        if (_usingVars.Count > 0)
+        {
+            ps.AddParameter("--%", _usingVars);
+        }
 
         Collection<PSObject?> results;
         try
