@@ -46,6 +46,11 @@ public sealed class UsePSNetDetourContext : PSCmdlet
                 // All other items are ouput when received.
                 WriteObject(e.ItemAdded);
             };
+            // We need to capture the errors from the pipeline so we can
+            // forward them to the caller. All other streams are done
+            // automatically by PowerShell except when the hook is run in
+            // another Runspace. That is handled after Invoke() as there is no
+            // public way to hook up the streams to the other Runspace.
             ps.Streams.Error.DataAdded += (sender, e) =>
             {
                 WriteError(ps.Streams.Error[e.Index]);
@@ -53,15 +58,14 @@ public sealed class UsePSNetDetourContext : PSCmdlet
 
             ps.Invoke(null, output);
 
-            // Check if there were any uncaught errors from hooks invoked in
-            // other runspaces/threads that couldn't be written earlier.
+            // Check the other streams for any records emitted by a hook
+            // invoking another Runspace. The error stream uses a custom list
+            // as the PSDataStreams can only be added in the same thread
+            // whereas the others do not have that restriction.
             foreach (ErrorRecord error in uncaughtErrors)
             {
                 WriteError(error);
             }
-
-            // The remaining streams will be present in the PSDataStreams
-            // if they weren't able to be forwarded earlier.
             foreach (VerboseRecord verbose in ps.Streams.Verbose)
             {
                 WriteVerbose(verbose.ToString() ?? string.Empty);

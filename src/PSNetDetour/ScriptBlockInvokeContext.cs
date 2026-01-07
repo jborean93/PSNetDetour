@@ -13,6 +13,7 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
     private readonly MethodBase _detouredMethod;
     private readonly Type _detourMetaType;
     private readonly InvocationInfo _myInvocation;
+    private readonly object? _state;
     private readonly ScriptBlock _scriptBlock;
     private readonly Runspace? _runspace;
     private readonly RunspacePool? _runspacePool;
@@ -27,6 +28,7 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         Type detourMetaType,
         ScriptBlock scriptBlock,
         InvocationInfo myInvocation,
+        object? state,
         Runspace? runspace,
         RunspacePool? runspacePool,
         bool disposeRunspace)
@@ -35,6 +37,7 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         _detouredMethod = detouredMethod;
         _detourMetaType = detourMetaType;
         _myInvocation = myInvocation;
+        _state = state;
         _scriptBlock = scriptBlock;
         _runspace = runspace;
         _runspacePool = runspacePool;
@@ -54,8 +57,7 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
     {
         using PowerShell ps = CreatePowerShell(out bool isSeparateRunspace);
 
-        // If the hook is run in a separate runspace we need to capture any errors
-        // that cannot be forwarded directly to the cmdlet context.
+        // If the hook is run in a separate runspace we need to capture any errors.
         List<ErrorRecord> uncapturedErrors = [];
 
         if (_contextStreams is not null)
@@ -64,7 +66,7 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
             {
                 ErrorRecord error = ps.Streams.Error[e.Index];
 
-                // We set the InvocationInfo the the cmdlet that created the
+                // We set the InvocationInfo to the cmdlet that created the
                 // hook so the caller can see where it is from rather than the
                 // Use-PSNetDetourContext cmdlet.
                 ReflectionHelper.ErrorRecord_SetInvocationInfo(error, _myInvocation);
@@ -85,11 +87,24 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
                     _contextStreams.Error.Add(error);
                 }
             };
+
+            // Remaining streams are forwarded automatically by PowerShell
+            // to the cmdlet context unless we are in another Runspace. In
+            // that case we need to hook them up manually and have the context
+            // cmdlet process them at exit.
+            if (isSeparateRunspace)
+            {
+                ps.Streams.Verbose = _contextStreams.Verbose;
+                ps.Streams.Debug = _contextStreams.Debug;
+                ps.Streams.Warning = _contextStreams.Warning;
+                ps.Streams.Information = _contextStreams.Information;
+                ps.Streams.Progress = _contextStreams.Progress;
+            }
         }
 
         object? detourObj = self is null
-            ? Activator.CreateInstance(_detourMetaType, [orig])
-            : Activator.CreateInstance(_detourMetaType, [orig, self]);
+            ? Activator.CreateInstance(_detourMetaType, [orig, _state])
+            : Activator.CreateInstance(_detourMetaType, [orig, _state, self]);
 
         ps.AddScript("$Detour = $args[0]; $methArgs = $args[1]; & $args[2].Invoke($args[3]) @methArgs", true)
             .AddArgument(detourObj)
@@ -124,54 +139,13 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
 
         if (_contextStreams is not null)
         {
-            // Error is special in that PSDataCollection.Add will throw if the
-            // calling from another thread in which it is hooked up to. We have
-            // a backup mechanism which can smuggle these errors back to the
-            // cmdlet context after it ends.
-            ForwardUncapturdStreams(uncapturedErrors, _contextStreams.Error, backup: _runspaceErrors);
-
-            // Other streams can be forwarded directly even from another thread.
-            ForwardUncapturdStreams(ps.Streams.Progress, _contextStreams.Progress);
-            ForwardUncapturdStreams(ps.Streams.Verbose, _contextStreams.Verbose);
-            ForwardUncapturdStreams(ps.Streams.Debug, _contextStreams.Debug);
-            ForwardUncapturdStreams(ps.Streams.Warning, _contextStreams.Warning);
-            ForwardUncapturdStreams(ps.Streams.Information, _contextStreams.Information);
+            // We attempt to forward the ErrorRecord to the context cmdlet.
+            // PSDataCollection will fail if we are in another thread so we
+            // fallback to storing them in a List the cmdlet checks on exit.
+            ForwardUncapturedStreams(uncapturedErrors, _contextStreams.Error, backup: _runspaceErrors);
         }
 
         return LanguagePrimitives.ConvertTo<T>(outputValue);
-    }
-
-    private static void ForwardUncapturdStreams<T>(
-        IList<T> source,
-        IList<T> destination,
-        IList<T>? backup = null)
-    {
-        if (source.Count == 0)
-        {
-            return;
-        }
-
-        try
-        {
-            foreach (T record in source)
-            {
-                destination.Add(record);
-            }
-        }
-        catch (PSInvalidOperationException)
-        {
-            if (backup is not null)
-            {
-                foreach (T record in source)
-                {
-                    backup.Add(record);
-                }
-            }
-            else
-            {
-                throw;
-            }
-        }
     }
 
     private PowerShell CreatePowerShell(out bool isSeparateRunspace)
@@ -202,6 +176,39 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         {
             isSeparateRunspace = false;
             return PowerShell.Create(RunspaceMode.CurrentRunspace);
+        }
+    }
+
+    private static void ForwardUncapturedStreams<T>(
+        IList<T> source,
+        IList<T> destination,
+        IList<T>? backup = null)
+    {
+        if (source.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (T record in source)
+            {
+                destination.Add(record);
+            }
+        }
+        catch (PSInvalidOperationException)
+        {
+            if (backup is not null)
+            {
+                foreach (T record in source)
+                {
+                    backup.Add(record);
+                }
+            }
+            else
+            {
+                throw;
+            }
         }
     }
 

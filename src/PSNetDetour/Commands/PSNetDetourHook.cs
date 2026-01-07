@@ -38,15 +38,17 @@ public sealed class NewPSNetDetourHook : PSCmdlet
     public ScriptBlock? Hook { get; set; }
 
     [Parameter]
+    public object? State { get; set; }
+
+    [Parameter]
     public SwitchParameter FindNonPublic { get; set; }
 
     [Parameter]
     public SwitchParameter IgnoreConstructorNew { get; set; }
 
     [Parameter]
+    [ArgumentCompleter(typeof(UseRunspaceCompleter))]
     public UseRunspaceValue? UseRunspace { get; set; }
-
-    // UsingVariables
 
     protected override void EndProcessing()
     {
@@ -164,7 +166,9 @@ public sealed class NewPSNetDetourHook : PSCmdlet
                 sourceSignature,
                 sourceMethod,
                 detourInfo.DetourMetaType,
-                Hook, MyInvocation,
+                Hook,
+                MyInvocation,
+                State,
                 hookRunspace,
                 hookRunspacePool,
                 disposeRunspace);

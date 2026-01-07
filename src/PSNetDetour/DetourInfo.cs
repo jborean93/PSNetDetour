@@ -490,7 +490,12 @@ internal sealed class DetourInfo
             delegateType,
             FieldAttributes.Private);
 
-        List<Type> constructorParameterTypes = [ delegateType ];
+        FieldBuilder stateField = builder.DefineField(
+            "State",
+            typeof(object),
+            FieldAttributes.Public);
+
+        List<Type> constructorParameterTypes = [ delegateType, typeof(object) ];
         FieldBuilder? instanceField = null;
         if (instanceType is not null)
         {
@@ -513,10 +518,14 @@ internal sealed class DetourInfo
         ctorIl.Emit(OpCodes.Ldarg_1); // Load delegate argument
         ctorIl.Emit(OpCodes.Stfld, delegateField); // Store delegate in field
 
+        ctorIl.Emit(OpCodes.Ldarg_0); // Load this
+        ctorIl.Emit(OpCodes.Ldarg_2); // Load object argument
+        ctorIl.Emit(OpCodes.Stfld, stateField); // Store object in field
+
         if (instanceField is not null)
         {
             ctorIl.Emit(OpCodes.Ldarg_0); // Load this
-            ctorIl.Emit(OpCodes.Ldarg_2); // Load instance argument
+            ctorIl.Emit(OpCodes.Ldarg_3); // Load instance argument
             ctorIl.Emit(OpCodes.Stfld, instanceField); // Store instance in field
         }
 
