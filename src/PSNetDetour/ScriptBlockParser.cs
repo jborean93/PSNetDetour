@@ -388,11 +388,27 @@ internal static class ScriptBlockParser
     {
         if (typeName is not GenericTypeName genericTypeName)
         {
+            string typeFullName = typeName.FullName;
+
+            bool isPointer = false;
+            if (!typeName.IsArray && typeName.FullName[typeName.FullName.Length - 1] == '+')
+            {
+                typeName = new TypeName(
+                    typeName.Extent,
+                    typeName.FullName.Substring(0, typeName.FullName.Length - 1));
+                isPointer = true;
+            }
+
             Type resolvedType = typeName.GetReflectionType()
                 ?? throw CreateParseError(
                     typeName.Extent,
                     "UnknownType",
-                    $"Failed to resolve type {typeName.FullName}.");
+                    $"Failed to resolve type {typeFullName}.");
+
+            if (isPointer)
+            {
+                resolvedType = resolvedType.MakePointerType();
+            }
 
             return resolvedType;
         }

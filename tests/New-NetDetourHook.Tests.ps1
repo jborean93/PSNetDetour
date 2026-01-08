@@ -1312,6 +1312,131 @@ finally {
             }
         }
 
+        It "Hooks static void method with pointer argument" {
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidWithPointerArg([int+]) } -Hook {
+                param ($arg1)
+
+                $arg1 | Should -BeOfType 'System.IntPtr'
+                [System.Runtime.InteropServices.Marshal]::ReadInt32($arg1) | Should -Be 1
+
+                # We should still be able to invoke the original by passing in
+                # the IntPtr even though it's a pointer argument.
+                $Detour.Invoke($arg1)
+                [System.Runtime.InteropServices.Marshal]::ReadInt32($arg1) | Should -Be 2
+
+                [System.Runtime.InteropServices.Marshal]::WriteInt32($arg1, 10)
+            }
+            try {
+                [PSNetDetour.Tests.TestClass]::CallStaticVoidWithPointerArg(1) | Should -Be 10
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static method that returns pointer" {
+            $p = [IntPtr]::Zero
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticPointerReturn([char+]) } -Hook {
+                param ($arg1)
+
+                $arg1 | Should -BeOfType 'System.IntPtr'
+                [System.Runtime.InteropServices.Marshal]::PtrToStringUni($arg1, 3) | Should -Be 'ABC'
+
+                $ret = $Detour.Invoke($arg1)
+
+                [System.Runtime.InteropServices.Marshal]::PtrToStringUni($arg1, 3) | Should -Be 'ABC'
+                $ret.ToInt64() | Should -Be ([IntPtr]::Add($arg1, 2).ToInt64())
+
+                # Override behaviour to return a pointer to the 3rd char instead of the 2nd.
+                [IntPtr]::Add($ret, 2)
+            }
+            try {
+                $p = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(6)
+                [System.Runtime.InteropServices.Marshal]::WriteInt16($p, [char]'A')
+                [System.Runtime.InteropServices.Marshal]::WriteInt16($p, 2, [char]'B')
+                [System.Runtime.InteropServices.Marshal]::WriteInt16($p, 4, [char]'C')
+
+                $newC = [char]0
+                $actual = [PSNetDetour.Tests.TestClass]::CallStaticPointerReturn($p, [ref]$newC)
+
+                $actual.ToInt64() | Should -Be ([IntPtr]::Add($p, 4).ToInt64())
+                $newC | Should -Be 'C'
+            }
+            finally {
+                $h.Dispose()
+                if ($p -ne [IntPtr]::Zero) {
+                    [System.Runtime.InteropServices.Marshal]::FreeHGlobal($p)
+                }
+            }
+        }
+
+        It "Hooks instance void method with pointer argument" {
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstanceVoidWithPointerArg([int+]) } -Hook {
+                param ($arg1)
+
+                $arg1 | Should -BeOfType 'System.IntPtr'
+                [System.Runtime.InteropServices.Marshal]::ReadInt32($arg1) | Should -Be 1
+
+                # We should still be able to invoke the original by passing in
+                # the IntPtr even though it's a pointer argument.
+                $Detour.Invoke($arg1)
+                [System.Runtime.InteropServices.Marshal]::ReadInt32($arg1) | Should -Be 2
+                $Detour.Instance.SomeProperty | Should -Be 2
+
+                [System.Runtime.InteropServices.Marshal]::WriteInt32($arg1, 10)
+                $Detour.Instance.SomeProperty = 20
+            }
+            try {
+                $i = [PSNetDetour.Tests.TestClass]::new(0)
+                $i.CallInstanceVoidWithPointerArg(1) | Should -Be 10
+                $i.SomeProperty | Should -Be 20
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks instance method that returns pointer" {
+            $p = [IntPtr]::Zero
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass].InstancePointerReturn([char+]) } -Hook {
+                param ($arg1)
+
+                $arg1 | Should -BeOfType 'System.IntPtr'
+                [System.Runtime.InteropServices.Marshal]::PtrToStringUni($arg1, 3) | Should -Be 'ABC'
+
+                $ret = $Detour.Invoke($arg1)
+
+                [System.Runtime.InteropServices.Marshal]::PtrToStringUni($arg1, 3) | Should -Be 'ABC'
+                $ret.ToInt64() | Should -Be ([IntPtr]::Add($arg1, 2).ToInt64())
+                $Detour.Instance.SomeProperty | Should -Be 4
+
+                # Override behaviour to return a pointer to the 3rd char instead of the 2nd.
+                [IntPtr]::Add($ret, 2)
+
+                $Detour.Instance.SomeProperty = 40
+            }
+            try {
+                $p = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(6)
+                [System.Runtime.InteropServices.Marshal]::WriteInt16($p, [char]'A')
+                [System.Runtime.InteropServices.Marshal]::WriteInt16($p, 2, [char]'B')
+                [System.Runtime.InteropServices.Marshal]::WriteInt16($p, 4, [char]'C')
+
+                $newC = [char]0
+                $i = [PSNetDetour.Tests.TestClass]::new(0)
+                $actual = $i.CallInstancePointerReturn($p, [ref]$newC)
+
+                $actual.ToInt64() | Should -Be ([IntPtr]::Add($p, 4).ToInt64())
+                $newC | Should -Be 'C'
+                $i.SomeProperty | Should -Be 40
+            }
+            finally {
+                $h.Dispose()
+                if ($p -ne [IntPtr]::Zero) {
+                    [System.Runtime.InteropServices.Marshal]::FreeHGlobal($p)
+                }
+            }
+        }
+
         It "Creates hook through alias" {
             $modulePath = Join-Path (Get-Module -Name PSNetDetour).ModuleBase 'PSNetDetour.psm1'
 
