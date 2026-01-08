@@ -175,9 +175,10 @@ internal sealed class DetourInfo
 
         // This is the type that will be set to $Detour that can be used in the
         // ScriptBlock to access the Instance and original method to invoke.
+        Type metaReturnType = returnType.IsPointer ? typeof(IntPtr) : returnType;
         Type detourMetaType = CreateDetourMetaType(
             $"{typeName}DetourMeta",
-            returnType,
+            metaReturnType,
             methodParams,
             originalDelegate,
             delegateMethod,
@@ -187,7 +188,7 @@ internal sealed class DetourInfo
         // argument in our detour method.
         MethodInfo targetDelegate = returnType == typeof(void)
             ? InvokeScriptBlockVoidMethod
-            : InvokeScriptBlockMethod.MakeGenericMethod(returnType);
+            : InvokeScriptBlockMethod.MakeGenericMethod(metaReturnType);
 
         MethodBuilder hookedMethod = typeBuilder.DefineMethod(
             "Hook",
@@ -303,6 +304,11 @@ internal sealed class DetourInfo
                 if (refLocal is not null)
                 {
                     ilGen.Emit(OpCodes.Ldloc, refLocal.Value.Item2); // Load PSReference local
+                }
+                else if (parameterTypes[i].IsPointer)
+                {
+                    ilGen.Emit(OpCodes.Ldarg, i + ldargArgumentIndexOffset); // Load argument
+                    ilGen.Emit(OpCodes.Box, typeof(IntPtr)); // Box as IntPtr
                 }
                 else if (parameterTypes[i].IsValueType)
                 {
@@ -467,7 +473,7 @@ internal sealed class DetourInfo
 
         ctorIl.Emit(OpCodes.Ret);
 
-        Type[] parameterTypes = [.. parameters.Select(p => p.ParameterType)];
+        Type[] parameterTypes = [.. parameters.Select(p => p.ParameterType.IsPointer ? typeof(IntPtr) : p.ParameterType)];
         MethodBuilder invokeMethod = builder.DefineMethod(
             "Invoke",
             MethodAttributes.Public,

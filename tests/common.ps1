@@ -28,7 +28,23 @@ Function Global:Complete {
         $null).CompletionMatches
 }
 
-Add-Type -TypeDefinition @'
+$addTypeParams = @{}
+$addTypeCommand = Get-Command -Name Add-Type
+if ('CompilerParameters' -in $addTypeCommand.Parameters.Keys) {
+    $referencedAssemblies = @(
+        [Object].Assembly.Location
+        [System.Dynamic.DynamicObject].Assembly.Location
+        [PSObject].Assembly.Location
+    )
+    $addTypeParams.CompilerParameters = [CodeDom.Compiler.CompilerParameters]@{
+        CompilerOptions = "/unsafe -reference:$($referencedAssemblies -join ",")"
+    }
+}
+else {
+    $addTypeParams.CompilerOptions = '/unsafe'
+}
+
+Add-Type @addTypeParams -TypeDefinition @'
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -246,6 +262,72 @@ namespace PSNetDetour.Tests
         public static object StaticReturnAnything()
         {
             return null;
+        }
+
+        public static int CallStaticVoidWithPointerArg(int value)
+        {
+            unsafe
+            {
+                StaticVoidWithPointerArg(&value);
+            }
+
+            return value;
+        }
+
+        public unsafe static void StaticVoidWithPointerArg(int* ptr)
+        {
+            (*ptr) += 1;
+        }
+
+        public static IntPtr CallStaticPointerReturn(IntPtr value, out char newValue)
+        {
+            unsafe
+            {
+                char* ptr = (char*)value;
+                char* newPtr = StaticPointerReturn(ptr);
+                newValue = *newPtr;
+
+                return (IntPtr)newPtr;
+            }
+        }
+
+        public unsafe static char* StaticPointerReturn(char* input)
+        {
+            return input + 1;
+        }
+
+        public int CallInstanceVoidWithPointerArg(int value)
+        {
+            unsafe
+            {
+                InstanceVoidWithPointerArg(&value);
+            }
+
+            return value;
+        }
+
+        public unsafe void InstanceVoidWithPointerArg(int* ptr)
+        {
+            SomeProperty = 2;
+            (*ptr) += 1;
+        }
+
+        public IntPtr CallInstancePointerReturn(IntPtr value, out char newValue)
+        {
+            unsafe
+            {
+                char* ptr = (char*)value;
+                char* newPtr = InstancePointerReturn(ptr);
+                newValue = *newPtr;
+
+                return (IntPtr)newPtr;
+            }
+        }
+
+        public unsafe char* InstancePointerReturn(char* input)
+        {
+            SomeProperty = 4;
+            return input + 1;
         }
     }
 
