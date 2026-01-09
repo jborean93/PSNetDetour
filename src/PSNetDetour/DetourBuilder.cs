@@ -500,7 +500,6 @@ internal static class DetourBuilder
         int hookLdargParamOffset = hookParamOffset + 1;
         int hookParamCount = parameterTypes.Length - hookParamOffset;
 
-        LocalBuilder inInvokeLocal = il.DeclareLocal(typeof(bool));  // FIXME: See if this is needed
         LocalBuilder metaLocal = il.DeclareLocal(metaType);
         LocalBuilder? resultLocal = null;
         if (returnType != typeof(void))
@@ -514,8 +513,6 @@ internal static class DetourBuilder
         // is also detoured.
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldfld, InvokeContext_InInvokeField);
-        il.Emit(OpCodes.Stloc, inInvokeLocal);
-        il.Emit(OpCodes.Ldloc, inInvokeLocal);
         il.Emit(OpCodes.Brfalse, inInvokeFalseLabel); // Skip to the normal hook path if not InInvoke.
 
         // Otherwise call the original method directly through the delegate
