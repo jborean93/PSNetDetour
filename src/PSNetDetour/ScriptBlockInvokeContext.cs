@@ -12,7 +12,6 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
 {
     private readonly string _methodSignature;
     private readonly MethodBase _detouredMethod;
-    private readonly Type _detourMetaType;
     private readonly InvocationInfo _myInvocation;
     private readonly ScriptBlock _scriptBlock;
     private readonly Hashtable _usingVars;
@@ -23,10 +22,16 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
     private PSDataStreams? _contextStreams;
     private List<ErrorRecord>? _runspaceErrors;
 
+    // Accessed in the hook entrypoint to create the detour meta object.
+    // Also exposed in NetDetourHook.State.
+    internal object? State;
+
+    // Allows the hook ScriptBlock to set/unset this.
+    public bool InInvoke;
+
     public ScriptBlockInvokeContext(
         string methodSignature,
         MethodBase detouredMethod,
-        Type detourMetaType,
         ScriptBlock scriptBlock,
         InvocationInfo myInvocation,
         object? state,
@@ -37,7 +42,6 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
     {
         _methodSignature = methodSignature;
         _detouredMethod = detouredMethod;
-        _detourMetaType = detourMetaType;
         _myInvocation = myInvocation;
         _scriptBlock = scriptBlock;
         _usingVars = usingVars;
@@ -47,8 +51,6 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
 
         State = state;
     }
-
-    internal object? State { get; }
 
     /// <summary>
     /// Called by Use-NetDetourContext to provide the cmdlet streams to
@@ -62,10 +64,10 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         _runspaceErrors = runspaceErrors;
     }
 
-    internal void InvokeScriptBlockVoid(Delegate orig, object? self, params object[] args)
-        => InvokeScriptBlock<object>(orig, self, args);
+    internal void InvokeScriptBlockVoid(object detourObj, params object[] args)
+        => InvokeScriptBlock<object>(detourObj, args);
 
-    internal T InvokeScriptBlock<T>(Delegate orig, object? self, params object[] args)
+    internal T InvokeScriptBlock<T>(object detourObj, params object[] args)
     {
         using PowerShell ps = CreatePowerShell(out bool isSeparateRunspace);
 
@@ -114,11 +116,20 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
             }
         }
 
-        object? detourObj = self is null
-            ? Activator.CreateInstance(_detourMetaType, [orig, State])
-            : Activator.CreateInstance(_detourMetaType, [orig, State, self]);
-
-        ps.AddScript("$Detour = $args[0]; $methArgs = $args[1]; & $args[2].Invoke($args[3]) @methArgs", true)
+        // We set _skipInvoke to false for the duration of the scriptblock
+        // invocation so that if the scriptblock calls back into the detoured
+        // method it will go through the detour again.
+        ps.AddScript(@"
+            $args[0].InInvoke = $false
+            try {
+                $Detour = $args[1]
+                $methArgs = $args[2]
+                & $args[3].Invoke($args[4]) @methArgs
+            }
+            finally {
+                $args[0].InInvoke = $true
+            }", true)
+            .AddArgument(this)
             .AddArgument(detourObj)
             .AddArgument(args)
             .AddArgument((object)ScriptBlockHelper.StripScriptBlockAffinity)

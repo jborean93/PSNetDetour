@@ -1,8 +1,0 @@
-# PSNetDetour
-## about_PSNetDetour
-
-# SHORT DESCRIPTION
-TODO
-
-# LONG DESCRIPTION
-TODO
