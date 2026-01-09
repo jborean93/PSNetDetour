@@ -546,4 +546,34 @@ Describe "Use-NetDetourContext" {
             $rs.Dispose()
         }
     }
+
+    It "Does not run hook when setting up hook context" {
+        $sourceType = (Get-Command -Name Use-NetDetourContext).ImplementingType.Assembly.GetType('PSNetDetour.ScriptBlockInvokeContext')
+        $sourceMethod = $sourceType.GetMethod('CreatePowerShell', [System.Reflection.BindingFlags]'NonPublic, Instance')
+
+        Use-NetDetourContext {
+            # Running a hook calls CreatePowerShell internally so could lead to
+            # infinite recursion due to hooking CreatePowerShell. When running
+            # the CreatePowerShell hook it'll call CreatePowerShell running the
+            # hook entrypoint again but due to our checks it'll skip past our
+            # hook and run the original method.
+            New-NetDetourHook -Method $sourceMethod -Hook {
+                param($arg1)
+
+                $Detour.Invoke($arg1)
+
+                # Another recursion, as StaticIntNoArgs will call our hook
+                # which calls CreatePowerShell, the hook is skipped and the
+                # original result is returned.
+                [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() | Should -Be 1
+            }
+
+            New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() } -Hook {
+                100
+            }
+
+            # Triggers the first CreatePowerShell call as part of invoking the hook.
+            [PSNetDetour.Tests.TestClass]::StaticIntNoArgs() | Should -Be 100
+        }
+    }
 }

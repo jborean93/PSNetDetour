@@ -40,10 +40,14 @@ public sealed class NewNetDetourHook : PSCmdlet
     [Parameter]
     public object? State { get; set; }
 
-    [Parameter]
+    [Parameter(
+        ParameterSetName = "Source"
+    )]
     public SwitchParameter FindNonPublic { get; set; }
 
-    [Parameter]
+    [Parameter(
+        ParameterSetName = "Source"
+    )]
     public SwitchParameter IgnoreConstructorNew { get; set; }
 
     [Parameter]
@@ -171,13 +175,11 @@ public sealed class NewNetDetourHook : PSCmdlet
             }
 
             string sourceSignature = MethodSignature.GetOverloadDefinition(sourceMethod);
-            DetourInfo detourInfo = DetourInfo.CreateDetour(
-                sourceMethod);
+            MethodInfo targetMethod = DetourBuilder.CreateDetour(sourceMethod);
 
             ScriptBlockInvokeContext invokeContext = new(
                 sourceSignature,
                 sourceMethod,
-                detourInfo.DetourMetaType,
                 Hook,
                 MyInvocation,
                 State,
@@ -185,9 +187,10 @@ public sealed class NewNetDetourHook : PSCmdlet
                 hookRunspace,
                 hookRunspacePool,
                 disposeRunspace);
+
             Hook detourHook = new(
                 sourceMethod,
-                detourInfo.DetourTarget,
+                targetMethod,
                 invokeContext);
 
             WriteObject(new NetDetourHook(detourHook, invokeContext));

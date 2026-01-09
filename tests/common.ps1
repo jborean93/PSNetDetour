@@ -375,6 +375,53 @@ namespace PSNetDetour.Tests
         public string StringValue;
     }
 
+    public struct TestStruct
+    {
+        public int IntValue;
+
+        public TestStruct(int value)
+        {
+            IntValue = value;
+        }
+
+        public static void StaticIncrement(ref TestStruct str)
+        {
+            str.IntValue++;
+        }
+
+        public static TestStruct Create()
+        {
+            return new TestStruct(1);
+        }
+
+        public static TestStruct Create(int value)
+        {
+            return new TestStruct(value);
+        }
+
+        public void Increment()
+        {
+            IntValue++;
+        }
+
+        public void Increment(int addValue)
+        {
+            IntValue += addValue;
+        }
+
+        public int IncrementAndReturn()
+        {
+            IntValue++;
+            return IntValue;
+        }
+
+        public int IncrementAndReturn(int addValue)
+        {
+            IntValue += addValue;
+            return IntValue;
+        }
+    }
+
     public class CapturingHost : PSHost
     {
         private readonly CapturingHostUI HostUI;

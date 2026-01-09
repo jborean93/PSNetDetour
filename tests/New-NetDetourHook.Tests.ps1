@@ -4,7 +4,7 @@ using namespace System.IO
 
 Describe "New-NetDetourHook" {
     Context "Hooks" {
-        It "Hash public properties describing the hook" {
+        It "Has public properties describing the hook" {
             $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticVoidNoArgs() } -Hook {}
             try {
                 $h | Should -Not -BeNullOrEmpty
@@ -1434,6 +1434,208 @@ finally {
                 if ($p -ne [IntPtr]::Zero) {
                     [System.Runtime.InteropServices.Marshal]::FreeHGlobal($p)
                 }
+            }
+        }
+
+        It "Hooks static void method on value type" {
+            $h = New-NetDetourHook -Source {
+                [PSNetDetour.Tests.TestStruct]::StaticIncrement([ref][PSNetDetour.Tests.TestStruct])
+            } -Hook {
+                param ($val)
+
+                $val.GetType().Name | Should -Be PSReference
+                $val.Value | Should -BeOfType ([PSNetDetour.Tests.TestStruct])
+                $val.Value.IntValue | Should -Be 1
+
+                $Detour.Instance | Should -BeNullOrEmpty
+
+                $Detour.Invoke($val)
+
+                $val.Value.IntValue | Should -Be 2
+
+                $val.Value.IntValue = 10
+            }
+            try {
+                $value = [PSNetDetour.Tests.TestStruct]::new(1)
+                [PSNetDetour.Tests.TestStruct]::StaticIncrement([ref]$value)
+                $value.IntValue | Should -Be 10
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static return method on value type" {
+            $h = New-NetDetourHook -Source {[PSNetDetour.Tests.TestStruct]::Create()} -Hook {
+
+                $args.Count | Should -Be 0
+
+                $Detour.Instance | Should -BeNullOrEmpty
+
+                $res = $Detour.Invoke()
+                $res.IntValue | Should -Be 1
+
+                [PSNetDetour.Tests.TestStruct]::new(5)
+            }
+            try {
+                $value = [PSNetDetour.Tests.TestStruct]::Create()
+                $value.IntValue | Should -Be 5
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks static return method with args on value type" {
+            $h = New-NetDetourHook -Source {[PSNetDetour.Tests.TestStruct]::Create([int])} -Hook {
+                param ($arg1)
+
+                $arg1 | Should -Be 10
+
+                $Detour.Instance | Should -BeNullOrEmpty
+
+                $res = $Detour.Invoke($arg1)
+                $res.IntValue | Should -Be 10
+
+                [PSNetDetour.Tests.TestStruct]::new(5)
+            }
+            try {
+                $value = [PSNetDetour.Tests.TestStruct]::Create(10)
+                $value.IntValue | Should -Be 5
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks instance void method with no args on value type" {
+            $h = New-NetDetourHook -Source {[PSNetDetour.Tests.TestStruct].Increment()} -Hook {
+
+                $args.Count | Should -Be 0
+
+                $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestStruct])
+                $Detour.Instance.IntValue | Should -Be 1
+
+                $Detour.Invoke()
+
+                $Detour.Instance.IntValue | Should -Be 2
+
+                $Detour.Instance = [PSNetDetour.Tests.TestStruct]::new(10)
+            }
+            try {
+                $s = [PSNetDetour.Tests.TestStruct]::new(1)
+                $s.Increment()
+                $s.IntValue | Should -Be 10
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+
+        It "Hooks instance void method with args on value type" {
+            $h = New-NetDetourHook -Source {[PSNetDetour.Tests.TestStruct].Increment([int])} -Hook {
+                param ($val)
+
+                $val | Should -BeOfType ([int])
+
+                $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestStruct])
+                $Detour.Instance.IntValue | Should -Be 1
+
+                $Detour.Invoke($val + 1)
+
+                $Detour.Instance.IntValue | Should -Be 4
+
+                $Detour.Instance = [PSNetDetour.Tests.TestStruct]::new(10)
+            }
+            try {
+                $s = [PSNetDetour.Tests.TestStruct]::new(1)
+                $s.Increment(2)
+                $s.IntValue | Should -Be 10
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks instance return method with no args on value type" {
+            $h = New-NetDetourHook -Source {[PSNetDetour.Tests.TestStruct].IncrementAndReturn()} -Hook {
+
+                $args.Count | Should -Be 0
+
+                $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestStruct])
+                $Detour.Instance.IntValue | Should -Be 1
+
+                $res = $Detour.Invoke()
+                $res | Should -Be 2
+
+                $Detour.Instance.IntValue | Should -Be 2
+
+                $Detour.Instance = [PSNetDetour.Tests.TestStruct]::new(10)
+
+                5
+            }
+            try {
+                $s = [PSNetDetour.Tests.TestStruct]::new(1)
+                $s.IncrementAndReturn() | Should -Be 5
+                $s.IntValue | Should -Be 10
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Hooks instance return method with args on value type" {
+            $h = New-NetDetourHook -Source {[PSNetDetour.Tests.TestStruct].IncrementAndReturn([int])} -Hook {
+                param ($val)
+
+                $val | Should -BeOfType ([int])
+
+                $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestStruct])
+                $Detour.Instance.IntValue | Should -Be 1
+
+                $res = $Detour.Invoke($val + 2)
+                $res | Should -Be 13
+                $Detour.Instance.IntValue | Should -Be 13
+
+                5
+            }
+            try {
+                $s = [PSNetDetour.Tests.TestStruct]::new(1)
+                $value = $s.IncrementAndReturn(10)
+                $value | Should -Be 5
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        # FIXME: Figure out why WinPS fails to hook this.
+        It "Hooks ValueType constructor"  -Skip:(-not $IsCoreCLR) {
+            $script:marker = $false
+            $h = New-NetDetourHook -Source {[PSNetDetour.Tests.TestStruct]::new([int])} -Hook {
+                param ($val)
+
+                $val | Should -BeOfType ([int])
+                $val | Should -Be 1
+
+                $Detour.Instance | Should -BeOfType ([PSNetDetour.Tests.TestStruct])
+                $Detour.Instance.IntValue | Should -Be 0
+
+                $Detour.Invoke($val + 1)
+
+                $Detour.Instance.IntValue | Should -Be 2
+
+                $script:marker = $true
+            }
+
+            try {
+                $s = [PSNetDetour.Tests.TestStruct]::new(1)
+                $s.IntValue | Should -Be 2
+                $script:marker | Should -BeTrue
+            }
+            finally {
+                $h.Dispose()
             }
         }
 
