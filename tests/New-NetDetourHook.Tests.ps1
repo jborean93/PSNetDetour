@@ -1639,6 +1639,47 @@ finally {
             }
         }
 
+        It "Hooks method with string argument that is null" {
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticWithStringArg([string]) } -Hook {
+                param ($arg1)
+
+                $arg1.GetType().Name | Should -Be NullString
+
+                $res = $Detour.Invoke($arg1)
+                $null -eq $res | Should -BeTrue
+
+                $res
+            }
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticWithStringArg([NullString]::Value)
+                $null -eq $actual | Should -BeTrue
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
+        It "Passes NullString into detoured method" {
+            $h = New-NetDetourHook -Source { [PSNetDetour.Tests.TestClass]::StaticWithStringArg([string]) } -Hook {
+                param ($arg1)
+
+                $arg1 | Should -BeOfType ([string])
+                $arg1.Length | Should -Be 0
+
+                $res = $Detour.Invoke([NullString]::Value)
+                $null -eq $res | Should -BeTrue
+
+                $res
+            }
+            try {
+                $actual = [PSNetDetour.Tests.TestClass]::StaticWithStringArg($null)
+                $null -eq $actual | Should -BeTrue
+            }
+            finally {
+                $h.Dispose()
+            }
+        }
+
         It "Creates hook through alias" {
             $modulePath = Join-Path (Get-Module -Name PSNetDetour).ModuleBase 'PSNetDetour.psm1'
 

@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Management.Automation;
+using System.Management.Automation.Internal;
+using System.Management.Automation.Language;
 using System.Management.Automation.Runspaces;
 using System.Reflection;
 
@@ -64,12 +66,26 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
         _runspaceErrors = runspaceErrors;
     }
 
-    internal void InvokeScriptBlockVoid(object detourObj, params object[] args)
+    internal void InvokeScriptBlockVoid(object detourObj, params object?[] args)
         => InvokeScriptBlock<object>(detourObj, args);
 
-    internal T InvokeScriptBlock<T>(object detourObj, params object[] args)
+    internal T? InvokeScriptBlock<T>(object detourObj, params object?[] args)
     {
         using PowerShell ps = CreatePowerShell(out bool isSeparateRunspace);
+
+        // PowerShell converts $null to "" for string parameters. In order to
+        // automatically preserve the input semantics we convert any null
+        // arguments for string parameters to NullString.Value so that
+        // PowerShell will keep it as $null.
+        ParameterInfo[] paramInfos = _detouredMethod.GetParameters();
+        for (int i = 0; i < args.Length; i++)
+        {
+            object? argValue = args[i];
+            if (argValue is null && paramInfos[0].ParameterType == typeof(string))
+            {
+                args[i] = NullString.Value;
+            }
+        }
 
         // If the hook is run in a separate runspace we need to capture any errors.
         List<ErrorRecord> uncapturedErrors = [];
@@ -173,7 +189,16 @@ internal sealed class ScriptBlockInvokeContext : IDisposable
             ForwardUncapturedStreams(uncapturedErrors, _contextStreams.Error, _runspaceErrors);
         }
 
-        return LanguagePrimitives.ConvertTo<T>(outputValue);
+        if (outputValue is null && typeof(T) == typeof(string))
+        {
+            // ConvertTo will cast null to "" for string types so we
+            // special case this to return null.
+            return default;
+        }
+        else
+        {
+            return LanguagePrimitives.ConvertTo<T>(outputValue);
+        }
     }
 
     private PowerShell CreatePowerShell(out bool isSeparateRunspace)
