@@ -329,6 +329,11 @@ namespace PSNetDetour.Tests
             SomeProperty = 4;
             return input + 1;
         }
+
+        public static string StaticWithStringArg(string val)
+        {
+            return val;
+        }
     }
 
     public class BaseClass

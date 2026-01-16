@@ -239,6 +239,29 @@ Use-NetDetourContext {
 
 This example shows how to hook methods with `ref` or `out` parameters. In the `-Source` parameter, use `[ref][TypeName]` for ref/out parameters. In the hook, the parameter will be a reference that can be accessed via `.Value`. In this example the `ref` parameter is being updated after the original method is called.
 
+### Example 10: Adds default behaviour when null was specified to a string parameter
+```powershell
+Push-Location -Path C:\folder\PSNetDetour
+
+Use-NetDetourContext {
+    New-NetDetourHook -Source { [IO.Path]::GetFullPath([string]) } -Hook {
+        param($path)
+
+        if ($path -eq [NullString]::Value) {
+            return $pwd.Path
+        }
+
+        $Detour.Invoke($path)
+    }
+
+    [IO.Path]::GetFullPath([NullString]::Value)
+}
+
+# C:\folder\PSNetDetour
+```
+
+Changes the behaviour of `[System.IO.Path]::GetFullPath` to return the current location when `null` was provided as an argument. Note that `[NullString]::Value` is used to represent the null as PowerShell casts `$null` to `""` for string parameters. This example shows how the actual `null` value provided to the .NET method comes through as `[NullString]::Value` allowing it to be passed through automatically when invoking `$Detour.Invoke(...)` on the original arguments.
+
 ## PARAMETERS
 
 ### -FindNonPublic
