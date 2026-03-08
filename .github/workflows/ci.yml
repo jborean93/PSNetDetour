@@ -44,7 +44,7 @@ jobs:
         AZURE_TS_ENDPOINT: ${{ env.BUILD_CONFIGURATION == 'Release' && secrets.AZURE_TS_ENDPOINT || '' }}
 
     - name: Capture PowerShell Module
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: PSModule
         path: output/*.nupkg
@@ -61,12 +61,24 @@ jobs:
         - name: PS_5.1_x64_Windows
           psversion: '5.1'
           os: windows-latest
+        - name: PS_5.1_arm64_Windows
+          psversion: '5.1'
+          os: windows-11-arm
         - name: PS_7.4_x64_Windows
           psversion: '7.4.0'
           os: windows-latest
+        - name: PS_7.4_arm64_Windows
+          psversion: '7.4.0'
+          os: windows-11-arm
         - name: PS_7.4_x64_Linux
           psversion: '7.4.0'
           os: ubuntu-latest
+        - name: PS_7.4_arm64_Linux
+          psversion: '7.4.0'
+          os: ubuntu-24.04-arm
+        - name: PS_7.4_arm64_macOS
+          psversion: '7.4.0'
+          os: macos-latest
         - name: PS_7.5_x64_Windows
           psversion: '7.5.0'
           os: windows-latest
@@ -79,7 +91,7 @@ jobs:
     - uses: actions/checkout@v6
 
     - name: Restore Built PowerShell Module
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         name: PSModule
         path: output
