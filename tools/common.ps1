@@ -165,7 +165,25 @@ function Assert-ModuleFast {
         return
     }
 
-    & ([scriptblock]::Create((Invoke-WebRequest -Uri 'bit.ly/modulefast'))) -Release $Version
+    $ProgressPreference = 'Ignore'
+
+    $attempt = 0
+    while ($true) {
+        try {
+            $code = Invoke-WebRequest -Uri 'bit.ly/modulefast'
+            break
+        }
+        catch {
+            if ($attempt -ge 2) {
+                throw "Failed to download bootstrap code for $moduleName after 3 attempts. Error: $_"
+            }
+
+            Write-Warning "Failed to download bootstrap code for $moduleName, attempt $($attempt + 1) of 3. Error: $_"
+            $attempt++
+        }
+    }
+
+    & ([scriptblock]::Create($code)) -Release $Version
 }
 
 function Assert-PowerShell {
