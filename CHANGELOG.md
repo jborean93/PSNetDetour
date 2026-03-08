@@ -1,6 +1,6 @@
 # Changelog for PSNetDetour
 
-## v0.1.1 - TBD
+## v0.1.1 - 2026-03-09
 
 * Use `[NullString]::Value` for string parameters in a hook when `$null` was provided
   * This avoids PowerShell converting the null value to `""`
