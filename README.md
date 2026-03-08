@@ -124,7 +124,6 @@ These cmdlets have the following requirements
 * PowerShell 5.1, or v7.4+
 
 Support for future PowerShell versions will be dependent on support for those .NET versions in [MonoMod](https://github.com/MonoMod/MonoMod).
-Currently Windows arm64 is not supported until `MonoMod` implements support for it.
 
 ## Installing
 

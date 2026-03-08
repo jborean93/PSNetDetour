@@ -176,7 +176,10 @@ task PesterTests {
     $dotnetTools = @(dotnet tool list --global) -join "`n"
     if (-not $dotnetTools.Contains('coverlet.console')) {
         Write-Host 'Installing dotnet tool coverlet.console' -ForegroundColor Yellow
-        dotnet tool install --global coverlet.console
+
+        # 8.0.0 broke .NET Framework, waiting on next 8.0.x release.
+        # https://github.com/coverlet-coverage/coverlet/issues/1818
+        dotnet tool install --global coverlet.console --version 6.0.4
     }
 
     $pwsh = Assert-PowerShell -Version $Manifest.PowerShellVersion -Arch $Manifest.PowerShellArch

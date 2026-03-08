@@ -27,7 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../PSNetDetour.Shared/PSNetDetour.Shared.csproj" />
-    <PackageReference Include="MonoMod.RuntimeDetour" Version="25.3.3" />
+    <PackageReference Include="MonoMod.RuntimeDetour" Version="25.3.4" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
